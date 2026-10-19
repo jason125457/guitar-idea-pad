@@ -1,0 +1,277 @@
+/* 設計系統：由 ui-ux-pro-max 的「音樂 / 表演」方向調整為工具型介面。
+   暖色深底、紅色主動作、琥珀強調；字體 Righteous（僅品牌字）+ Poppins。 */
+:root {
+  --bg: #14110f;
+  --surface: #1d1916;
+  --surface-2: #2a231f;
+  --border: #44392f;
+  --text: #f5ede4;
+  --muted: #b9ab9d;
+  --primary: #dc2626;
+  --on-primary: #ffffff;
+  --accent: #fbbf24;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --violet: #c4b5fd;
+  --danger: #fca5a5;
+  --ring: #fbbf24;
+  --radius: 14px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fffbeb;
+    --surface: #ffffff;
+    --surface-2: #fdf3dc;
+    --border: #e4d6b8;
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #b45309;
+    --ok: #15803d;
+    --warn: #b45309;
+    --violet: #6d28d9;
+    --danger: #b91c1c;
+    --ring: #b45309;
+    color-scheme: light;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 16px/1.6 Poppins, 'Noto Sans TC', 'Microsoft JhengHei', system-ui, sans-serif;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; touch-action: manipulation; }
+button:disabled { cursor: not-allowed; opacity: 0.45; }
+:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.mono { font-family: var(--mono); }
+
+.app { max-width: 1120px; margin: 0 auto; padding: var(--s4) var(--s4) var(--s6); }
+.top { padding: var(--s4) 0 var(--s5); }
+.brand { font: 400 28px/1.2 Righteous, Poppins, sans-serif; margin: 0; letter-spacing: 0.02em; color: var(--accent); }
+.tagline { margin: var(--s1) 0 0; color: var(--muted); }
+
+.layout { display: grid; gap: var(--s5); grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 400px) minmax(0, 1fr); align-items: start; }
+  .layout > .panel { position: sticky; top: var(--s4); }
+}
+.stack { display: grid; gap: var(--s5); min-width: 0; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s4);
+  min-width: 0;
+}
+.panel h2 { margin: 0 0 var(--s3); font-size: 18px; font-weight: 600; }
+.panel h3 { margin: var(--s4) 0 var(--s1); font-size: 14px; color: var(--accent); font-weight: 600; }
+
+.field { display: block; font-size: 14px; color: var(--muted); margin-bottom: var(--s1); }
+.field-inline { display: grid; gap: var(--s1); margin-bottom: var(--s3); }
+.input {
+  width: 100%; min-height: 48px; padding: 0 var(--s3);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 16px;
+}
+.input-sm { max-width: 220px; }
+.input[aria-invalid='true'], .input.bad { border-color: var(--danger); }
+.help { margin: var(--s1) 0 var(--s3); font-size: 13px; color: var(--muted); }
+.help.err { color: var(--danger); }
+
+.row { display: flex; gap: var(--s2); margin-top: var(--s3); }
+.row.wrap { flex-wrap: wrap; }
+.btn {
+  min-height: 48px; padding: 0 var(--s4);
+  border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2);
+  font-weight: 500; transition: background-color 150ms, border-color 150ms, transform 150ms;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:active:not(:disabled) { transform: scale(0.98); }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn-primary:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
+.btn-ghost { background: transparent; }
+.btn-sm { min-height: 44px; padding: 0 var(--s3); font-size: 14px; }
+.btn.is-active { border-color: var(--accent); color: var(--accent); background: transparent; }
+
+/* ── 指板 ── */
+.fb { margin: var(--s3) 0; max-width: 340px; }
+.fb-head, .fb-row { display: grid; grid-template-columns: 24px repeat(6, 1fr); align-items: center; }
+.fb-head::before { content: ''; }
+.fb-top {
+  min-height: 44px; border: 0; background: transparent; font-size: 15px; font-weight: 600; color: var(--muted);
+}
+.fb-top.is-open { color: var(--ok); }
+.fb-top.is-mute { color: var(--danger); }
+.fb-grid { border-top: 6px solid var(--text); border-radius: 2px; }
+.fb-row { border-bottom: 2px solid var(--border); }
+.fb-fretno { font-size: 12px; color: var(--muted); text-align: center; }
+.fb-cell {
+  position: relative; height: 48px; border: 0; background: transparent; padding: 0;
+}
+.fb-cell::before {
+  content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+  background: var(--muted); opacity: 0.7; transform: translateX(-50%);
+}
+.fb-dot {
+  position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.2); opacity: 0; background: var(--accent);
+  transition: transform 150ms, opacity 150ms;
+}
+.fb-dot.on { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+.fb-cell:hover .fb-dot:not(.on) { opacity: 0.25; transform: translate(-50%, -50%) scale(0.8); }
+.fb-nav { display: flex; align-items: center; justify-content: space-between; margin-top: var(--s2); }
+.fb-nav .btn { min-height: 44px; padding: 0 var(--s2); font-size: 14px; }
+.fb-range { font-size: 13px; color: var(--muted); }
+
+/* ── 目前和弦 ── */
+.now { background: var(--bg); border: 1px dashed var(--border); border-radius: 12px; padding: var(--s3) var(--s4); min-height: 96px; }
+.now-name { font-size: 32px; font-weight: 600; color: var(--accent); line-height: 1.2; }
+.now-notes { font-size: 13px; color: var(--muted); margin-top: var(--s1); }
+.now-empty { color: var(--muted); font-size: 14px; }
+.alts { margin-top: var(--s2); font-size: 13px; color: var(--muted); }
+.alt { display: inline-block; margin-left: var(--s2); padding: 0 var(--s2); border: 1px solid var(--border); border-radius: 999px; color: var(--text); }
+
+/* ── 進行 ── */
+.empty { color: var(--muted); }
+.empty p { margin: 0 0 var(--s3); }
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.chip { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.chip-main { display: grid; gap: 2px; text-align: left; border: 0; background: transparent; padding: var(--s2) var(--s3); min-height: 44px; }
+.chip-name { font-weight: 600; font-size: 18px; }
+.chip-roman { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.chip-x { width: 44px; border: 0; border-left: 1px solid var(--border); background: transparent; font-size: 20px; color: var(--muted); }
+.chip-x:hover { color: var(--danger); }
+
+.tag { font-size: 12px; padding: 1px var(--s2); border-radius: 999px; border: 1px solid currentColor; width: fit-content; }
+.tag:empty { display: none; }
+.tag-diatonic { color: var(--ok); }
+.tag-borrowed { color: var(--warn); }
+.tag-secondary-dominant, .tag-tritone-sub { color: var(--violet); }
+.tag-chromatic { color: var(--danger); }
+
+/* ── 調性與聲部 ── */
+.key-line { margin: 0; display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; }
+.key-name { font-size: 24px; font-weight: 600; color: var(--accent); }
+.conf { font-size: 13px; color: var(--muted); }
+.vl, .finds { list-style: none; margin: var(--s4) 0 0; padding: 0; display: grid; gap: var(--s3); }
+.vl-head { display: flex; justify-content: space-between; gap: var(--s3); font-size: 14px; }
+.motion { color: var(--accent); }
+.deltas { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--s1); margin-top: var(--s1); }
+.delta { text-align: center; font-family: var(--mono); font-size: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 2px 0; }
+.delta-s { display: block; font-family: Poppins, sans-serif; font-size: 11px; color: var(--muted); }
+.delta.down { color: var(--ok); }
+.delta.up { color: var(--violet); }
+.delta.zero, .delta.na { color: var(--muted); }
+.finds li { padding: var(--s2) var(--s3); background: var(--bg); border-left: 3px solid var(--accent); border-radius: 6px; font-size: 14px; }
+
+/* ── 建議卡 ── */
+.cards { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+@media (min-width: 640px) { .cards { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); } }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: var(--s4); border-top: 4px solid var(--accent); }
+.mood-warm-resolve { border-top-color: var(--ok); }
+.mood-bittersweet { border-top-color: var(--violet); }
+.mood-neo-soul { border-top-color: var(--primary); }
+.card-head { display: flex; gap: var(--s2); align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.mood { font-weight: 600; color: var(--text); }
+.card-chord { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s2); }
+.card-name { font-size: 26px; font-weight: 600; color: var(--accent); }
+.card-reason { margin: var(--s2) 0; font-size: 14px; }
+.fit { margin: 0 0 var(--s2); font-size: 13px; color: var(--muted); }
+.fit-clash { color: var(--danger); }
+.tab { margin: 0; padding: var(--s2) var(--s3); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 14px; line-height: 1.35; overflow-x: auto; }
+
+/* ── 主歌建議 ── */
+.guide { margin-top: var(--s4); padding: var(--s3) var(--s4); background: var(--bg); border-radius: 12px; border: 1px solid var(--border); }
+.guide p, .guide ul { margin: 0; font-size: 14px; }
+.guide ul { padding-left: var(--s5); }
+.guide strong { color: var(--accent); }
+
+/* ── 靈感與段落 ── */
+.ideabar { margin-bottom: var(--s5); }
+.idea-top { display: grid; gap: var(--s3); }
+@media (min-width: 640px) { .idea-top { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } }
+.idea-actions { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.save { margin: var(--s2) 0 0; min-height: 22px; font-size: 13px; color: var(--muted); }
+.loading { color: var(--muted); padding: var(--s6) 0; }
+.hidden { display: none; }
+
+.idea-list { list-style: none; margin: var(--s3) 0 0; padding: 0; display: grid; gap: var(--s2); }
+.idea-row { display: flex; align-items: center; gap: var(--s2); background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: var(--s1) var(--s2); }
+.idea-row.is-current { border-color: var(--accent); }
+.idea-pick { flex: 1; min-width: 0; min-height: 48px; display: grid; text-align: left; border: 0; background: transparent; padding: var(--s1) var(--s2); }
+.idea-name { font-weight: 600; overflow-wrap: anywhere; }
+.idea-meta { font-size: 12px; color: var(--muted); }
+.btn.is-danger { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s4); align-items: center; border-bottom: 1px solid var(--border); padding-bottom: var(--s3); }
+.tab-btn {
+  min-height: 44px; padding: 0 var(--s4); border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  font-weight: 500; display: inline-flex; align-items: center; gap: var(--s2);
+}
+.tab-btn.is-on { background: var(--accent); border-color: var(--accent); color: #1a1209; }
+.tab-chorus:not(.is-on) { border-color: var(--primary); }
+.tab-count { font-size: 12px; opacity: 0.8; }
+.add-sec summary {
+  min-height: 44px; display: inline-flex; align-items: center; padding: 0 var(--s3); border-radius: 999px;
+  border: 1px dashed var(--border); cursor: pointer; list-style: none; color: var(--muted);
+}
+.add-sec summary::-webkit-details-marker { display: none; }
+.add-sec[open] summary { border-color: var(--accent); color: var(--accent); }
+.add-menu { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); }
+.sec-tools { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: flex-end; margin-top: var(--s3); }
+.sec-type { display: grid; }
+.sec-type .input { min-height: 44px; }
+
+/* ── 哼唱錄入 ── */
+.hum { margin: var(--s3) 0; }
+.hum .btn { display: inline-flex; align-items: center; gap: var(--s2); }
+.hum .lab-link { margin-left: var(--s2); color: var(--accent); }
+.hum-rec { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+.hum-live { font-size: 32px; font-weight: 600; color: var(--accent); min-width: 3ch; }
+.hum-notes { list-style: none; margin: 0 0 var(--s3); padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.hum-note {
+  min-height: 44px; padding: 0 var(--s3); border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface-2); display: inline-flex; align-items: baseline; gap: var(--s2); font-weight: 600;
+}
+.hum-note:hover { border-color: var(--danger); }
+.hum-cents { font-size: 12px; font-weight: 400; color: var(--muted); font-family: var(--mono); }
+.check { display: flex; gap: var(--s2); align-items: flex-start; font-size: 14px; color: var(--muted); margin: var(--s2) 0; min-height: 44px; }
+.check input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+
+/* ── 旋律配和弦 ── */
+.hz-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3); margin: var(--s4) 0 var(--s2); }
+.hz-field .row { margin-top: 0; flex-wrap: wrap; }
+.hz-field .input-sm { max-width: 120px; }
+.hz-list { list-style: none; margin: var(--s4) 0; padding: 0; display: grid; gap: var(--s3); }
+@media (min-width: 640px) { .hz-list { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); } }
+.hz-card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: var(--s3) var(--s4); display: grid; gap: var(--s2); align-content: start; }
+.hz-head { display: grid; gap: 2px; }
+.hz-bar { font-size: 13px; color: var(--muted); font-weight: 600; }
+.hz-notes { font-size: 14px; overflow-wrap: anywhere; }
+.hz-best { font-size: 11px; opacity: 0.8; }
+.hz-tab summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 14px; }
+
+.backup { margin-bottom: var(--s5); }
+.backup summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; font-size: 18px; }
+.backup[open] summary { margin-bottom: var(--s2); }
+.notice { margin: var(--s3) 0 0; padding: var(--s2) var(--s3); border-radius: 8px; border-left: 4px solid var(--ok); background: var(--bg); font-size: 14px; }
+.notice.err { border-left-color: var(--danger); color: var(--danger); }
+
+.checks { list-style: none; margin: var(--s3) 0 0; padding: 0; display: grid; gap: var(--s2); }
+.checks li { display: flex; gap: var(--s2); font-size: 14px; }
+.check-mark { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.checks .ok .check-mark { background: var(--ok); color: #0b1a0f; }
+.checks .warn .check-mark { background: var(--warn); color: #1a1209; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
