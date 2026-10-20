@@ -246,6 +246,23 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .check { display: flex; gap: var(--s2); align-items: flex-start; font-size: 14px; color: var(--muted); margin: var(--s2) 0; min-height: 44px; }
 .check input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--accent); flex: none; }
 
+/* ── 音色與離線 ── */
+.sound, .backup { margin-bottom: var(--s3); }
+.sound summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; font-size: 18px; }
+.sound[open] summary { margin-bottom: var(--s2); }
+.timbres { border: 0; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.timbre { display: grid; grid-template-columns: 24px 1fr; column-gap: var(--s3); align-items: center; min-height: 52px; padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: 12px; background: var(--bg); cursor: pointer; }
+.timbre.is-on { border-color: var(--accent); }
+.timbre input { width: 22px; height: 22px; accent-color: var(--accent); grid-row: span 2; }
+.timbre-name { font-weight: 600; }
+.timbre-hint { font-size: 13px; color: var(--muted); grid-column: 2; }
+.offline-list { list-style: none; margin: var(--s2) 0 var(--s3); padding: 0; display: grid; gap: var(--s2); }
+.offline-list li { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; min-height: 44px; padding: 0 var(--s3); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.ok-text { color: var(--ok); font-size: 14px; }
+.muted-text { color: var(--muted); font-size: 14px; }
+.credit { margin-top: var(--s4); }
+.credit a { color: var(--accent); }
+
 /* ── 旋律配和弦 ── */
 .hz-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3); margin: var(--s4) 0 var(--s2); }
 .hz-field .row { margin-top: 0; flex-wrap: wrap; }

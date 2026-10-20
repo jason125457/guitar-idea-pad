@@ -18,7 +18,7 @@ npm run build
 | `src/store/` | IndexedDB 儲存層（`db.ts`）、自動儲存 hook（`useIdeaStore.ts`） |
 | `src/core/harmonize.ts` | 旋律配和弦：調性推論、速度估計、切窗、和弦候選與 Viterbi、指法串接 |
 | `src/core/melody.ts` | 音高軌跡 → 音符：過濾、中值濾波、切音、吸附半音／調內音（純函式，可用合成資料測試） |
-| `src/audio/` | 試聽（Karplus-Strong 合成）、`pitch.worklet.ts`（AudioWorklet + pitchy）、`pitchTracker.ts`（麥克風／測試訊號 → 音高幀） |
+| `src/audio/` | 試聽（`sound.ts` 取樣吉他載入與音色、`pluck.ts` 和弦播放含合成備援、`offline.ts` 離線快取）、`pitch.worklet.ts`（AudioWorklet + pitchy）、`pitchTracker.ts`（麥克風／測試訊號 → 音高幀） |
 | `src/lab/` + `pitch-lab.html` | 哼唱音高偵測實驗室：即時音高、軌跡圖、參數調整、切音結果與播放 |
 | `src/app/` | React UI（靈感清單、段落分頁、直式指板、進行、分析、建議卡） |
 
@@ -52,6 +52,11 @@ Idea { id, title, createdAt, updatedAt, sections[] }
 - 旋律配和弦：哼唱時一併記下每個音的時間（`Section.melodyTimed`），依速度與拍號切成小節，
   從旋律推論調性（Krumhansl-Kessler 輪廓），每小節以「旋律音契合度 + 和聲走向」做動態規劃挑和弦，並附替代候選、吉他指法與「旋律＋和弦」同步試聽；
   手動改過旋律文字後節奏資料會失效（只比音高），此時需重新哼唱
+- 取樣吉他音色與離線：和弦試聽用 smplr 播放 FluidR3_GM 的鋼弦／尼龍弦吉他取樣（檔案放在 `public/samples`，與網站同源，
+  授權見 `public/samples/ATTRIBUTION.md`，CC BY 3.0，介面已附標示）；取樣尚未載入或載入失敗時自動退回合成音色。
+  正式版（`npm run build` + `npm run preview`）會註冊 service worker（`public/sw.js`）：建置時產生 `precache.json`，
+  網頁本體與取樣都存進 Cache API，沒有網路也能開啟與播放；有網路時永遠先取最新版。
+  「音色與離線」面板可切換音色、下載另一種音色、清除快取。開發模式不啟用 service worker。
 - 多個靈感（新增／重新命名／複製／刪除）與段落（新增／改類型／排序／刪除），皆存在 IndexedDB
 
 ## 尚未做
@@ -59,5 +64,6 @@ Idea { id, title, createdAt, updatedAt, sections[] }
 - 哼唱採譜在真人聲＋真麥克風上的準確度（目前只用合成訊號與假麥克風串流驗證過整條處理鏈，
   請到 `/pitch-lab.html` 用自己的聲音實測，必要時調整 `DEFAULT_SEGMENT_OPTIONS`）
 - 節奏／拍點量化（目前只記錄音高與秒數，旋律欄位只存音名）
-- 匯出 MIDI / PDF、取樣吉他音色
+- 匯出 MIDI / PDF
+- 旋律試聽目前仍是簡單合成音（刻意與吉他和弦區隔）；手機上的取樣解碼時間與記憶體用量尚未實測
 - 變調夾、非標準調弦的 UI（資料結構已支援 `capo` 與 `tuning`）

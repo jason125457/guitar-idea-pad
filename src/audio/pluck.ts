@@ -1,6 +1,10 @@
-/** 零下載的吉他撥弦合成（Karplus-Strong），MVP 試聽用。 */
+/**
+ * 和弦試聽：優先用取樣吉他（見 sound.ts）；取樣還沒載入、載入失敗，或使用者選了「合成音色」時，
+ * 退回零下載的 Karplus-Strong 撥弦合成。
+ */
 
 import { getContext as context } from './context';
+import { STRUM_GAP_SEC, activePlayer, strumVelocity } from './sound';
 
 const buffers = new Map<number, AudioBuffer>();
 let active: AudioBufferSourceNode[] = [];
@@ -40,6 +44,7 @@ export function stopAll(): void {
     }
   }
   active = [];
+  activePlayer()?.stop();
 }
 
 export interface TimedChord {
@@ -50,6 +55,18 @@ export interface TimedChord {
 
 /** 把和弦排進 AudioContext 時間軸（t0 起算），每個和弦由低到高輕刷；不會先停掉正在播的聲音。 */
 export function scheduleChords(c: AudioContext, t0: number, chords: readonly TimedChord[], level = 1): void {
+  const player = activePlayer();
+  if (player) {
+    for (const ch of chords) {
+      [...ch.midis]
+        .sort((a, b) => a - b)
+        .forEach((m, ni) => {
+          // time 是 AudioContext 的絕對時間；多留 0.5 秒讓琴弦自然收尾
+          player.start({ note: m, time: t0 + ch.startSec + ni * STRUM_GAP_SEC, duration: ch.durSec + 0.5, velocity: strumVelocity(ni, level) });
+        });
+    }
+    return;
+  }
   for (const ch of chords) {
     [...ch.midis]
       .sort((a, b) => a - b)

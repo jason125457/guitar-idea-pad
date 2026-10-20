@@ -45,6 +45,7 @@ import { Fretboard } from './Fretboard';
 import { HarmonizePanel } from './HarmonizePanel';
 import { HumRecorder } from './HumRecorder';
 import { IdeaBar } from './IdeaBar';
+import { SoundPanel } from './SoundPanel';
 
 const EMPTY: Fret[] = [null, null, null, null, null, null];
 const EXAMPLE: Fret[][] = [
@@ -220,6 +221,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
           if (fallback) setSectionId(fallback.id);
         }}
       />
+
+      <SoundPanel />
 
       <BackupPanel ideas={ideas} current={idea} onImport={store.importIdeas} />
 
