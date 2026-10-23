@@ -1,0 +1,25 @@
+# Cloudflare Pages 會讀這個檔（GitHub Pages 會忽略它）。
+# 原則：會改版的入口檔每次都向伺服器確認；檔名含雜湊或不會變的大檔可以放心長期快取。
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: microphone=(self), camera=(), geolocation=()
+
+# service worker 與預快取清單一定要拿最新的，否則手機收不到新版
+/sw.js
+  Cache-Control: no-cache
+/precache.json
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/pitch-lab.html
+  Cache-Control: no-cache
+
+# 建置輸出的檔名帶內容雜湊，內容不會變
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 吉他取樣（約 2 MB 一個，不會變）
+/samples/*
+  Cache-Control: public, max-age=2592000
