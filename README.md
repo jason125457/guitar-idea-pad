@@ -2,12 +2,23 @@
 
 給「有指板直覺、不熟樂理」的創作者：輸入指法 → 辨識和弦與調性 → 看懂聲部動向 → 取得下一步建議。
 
+**線上版：https://jason125457.github.io/guitar-idea-pad/**（HTTPS，手機可用麥克風；資料存在各自的瀏覽器裡，不會上傳）
+
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 理論引擎單元測試
-npm run build
+npm test         # 單元測試
+npm run build    # 型別檢查 + 打包到 dist/
+npm run preview  # 預覽正式版（可測離線快取）
 ```
+
+## 部署
+
+推到 `main` 會觸發 `.github/workflows/deploy.yml`：跑測試 → 型別檢查與打包（`--base=/<倉庫名>/`）→ 發佈到 GitHub Pages。
+網站放在子路徑，所以程式裡的連結一律用 `import.meta.env.BASE_URL`，不要寫死 `/`。
+
+**提交信箱**：公開倉庫的提交紀錄會顯示作者信箱。請在每台開發主機上用 GitHub 提供的匿名信箱，
+例如 `git config user.email "<id>+<帳號>@users.noreply.github.com"`（GitHub → Settings → Emails 可查到）。
 
 ## 結構
 
