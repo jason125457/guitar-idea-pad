@@ -27,10 +27,8 @@ npm run deploy         # 建置（含型別檢查）→ 上傳 dist/ → 綁定 
 - 授權範圍很廣（wrangler 的預設）；不再使用的主機上可執行 `npx wrangler@4 logout`，
   或到 Cloudflare 後台 Profile → Access → Authorized Applications 撤銷。
 
-### GitHub Pages（舊，可停用）
-
-推到 `main` 會觸發 `.github/workflows/deploy.yml`：跑測試 → 型別檢查與打包（`--base=/<倉庫名>/`）→ 發佈到 GitHub Pages。
-網站放在子路徑，所以程式裡的連結一律用 `import.meta.env.BASE_URL`，不要寫死 `/`。
+網站目前放在網域根目錄，但程式裡的連結仍一律用 `import.meta.env.BASE_URL`，不要寫死 `/`，之後搬到子路徑也不會壞。
+推到 GitHub 不會自動部署；要更新網站請執行 `npm run deploy`。
 
 **提交信箱**：公開倉庫的提交紀錄會顯示作者信箱。請在每台開發主機上用 GitHub 提供的匿名信箱，
 例如 `git config user.email "<id>+<帳號>@users.noreply.github.com"`（GitHub → Settings → Emails 可查到）。
