@@ -2,7 +2,7 @@
 
 給「有指板直覺、不熟樂理」的創作者：輸入指法 → 辨識和弦與調性 → 看懂聲部動向 → 取得下一步建議。
 
-**線上版：https://jason125457.github.io/guitar-idea-pad/**（HTTPS，手機可用麥克風；資料存在各自的瀏覽器裡，不會上傳）
+**線上版：https://guitar.chordy.site/**（Cloudflare，HTTPS，手機可用麥克風；資料存在各自的瀏覽器裡，不會上傳）
 
 ```bash
 npm install
@@ -13,6 +13,21 @@ npm run preview  # 預覽正式版（可測離線快取）
 ```
 
 ## 部署
+
+### Cloudflare（目前使用，網域 `guitar.chordy.site`）
+
+```bash
+npx wrangler@4 login   # 第一次，或換主機時：在瀏覽器登入並授權
+npm run deploy         # 建置（含型別檢查）→ 上傳 dist/ → 綁定 wrangler.toml 裡的自訂網域
+```
+
+- 設定在 `wrangler.toml`：把 `dist/` 當純靜態資源發佈，不需要後端；`custom_domain = true` 會自動建立 DNS 紀錄與 HTTPS 憑證，
+  前提是網域在同一個 Cloudflare 帳號，且該名稱還沒有其他 DNS 紀錄。
+- `public/_headers` 控制快取：`sw.js`、`precache.json` 與 HTML 入口每次都向伺服器確認，檔名帶雜湊的檔案與吉他取樣長期快取。
+- 授權範圍很廣（wrangler 的預設）；不再使用的主機上可執行 `npx wrangler@4 logout`，
+  或到 Cloudflare 後台 Profile → Access → Authorized Applications 撤銷。
+
+### GitHub Pages（舊，可停用）
 
 推到 `main` 會觸發 `.github/workflows/deploy.yml`：跑測試 → 型別檢查與打包（`--base=/<倉庫名>/`）→ 發佈到 GitHub Pages。
 網站放在子路徑，所以程式裡的連結一律用 `import.meta.env.BASE_URL`，不要寫死 `/`。

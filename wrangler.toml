@@ -1,0 +1,15 @@
+# Cloudflare 部署設定（純靜態網站：把 dist/ 當成靜態資源發佈，不需要後端程式）。
+# 部署：npm run deploy（會先建置，再用 wrangler 上傳並綁定網域）
+name = "guitar-idea-pad"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./dist"
+# 沒對到檔案就回 404（這是單頁、沒有前端路由，不需要改寫到 index.html）
+not_found_handling = "none"
+
+# 自訂網域：部署時 Cloudflare 會自動建立 DNS 紀錄與 HTTPS 憑證。
+# 前提是 chordy.site 這個網域在同一個 Cloudflare 帳號，且 guitar 這個名稱還沒有其他 DNS 紀錄。
+[[routes]]
+pattern = "guitar.chordy.site"
+custom_domain = true
