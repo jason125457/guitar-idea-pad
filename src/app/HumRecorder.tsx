@@ -125,7 +125,7 @@ export function HumRecorder({ keyInfo, speller, hasMelody, hasTiming, onAppend, 
             哼唱錄入旋律
           </button>
           <p className="help">用「嗚」或「啦」哼，每個音拉長一點、換音停一下，會比較準。最長 {MAX_SECONDS} 秒。
-            <a className="lab-link" href="/pitch-lab.html">偵測不準？到實驗室調整</a>
+            <a className="lab-link" href={`${import.meta.env.BASE_URL}pitch-lab.html`}>偵測不準？到實驗室調整</a>
           </p>
         </>
       )}

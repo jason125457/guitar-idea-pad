@@ -213,7 +213,7 @@ export function LabApp() {
         <h1 className="brand">哼唱音高偵測實驗室</h1>
         <p className="tagline">
           先確認「你的麥克風 + 你的聲音」抓得準不準，再把這套搬進主程式。
-          <a href="/" className="lab-link">回到指板靈感本</a>
+          <a href={import.meta.env.BASE_URL} className="lab-link">回到指板靈感本</a>
         </p>
       </header>
 
