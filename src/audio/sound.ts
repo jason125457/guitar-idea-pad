@@ -26,6 +26,18 @@ export function sampleUrl(t: SampleTimbre, base: string = import.meta.env.BASE_U
   return `${base}samples/FluidR3_GM/${FILE[t]}-mp3.js`;
 }
 
+/**
+ * 只解碼吉他音域內、每隔 3 個半音的取樣（E2..E6，共 17 個），其餘音由最近的取樣變調補上（最多差 1 個半音，聽不太出來）。
+ * 原始檔有 88 個音（A0..C8），全部解碼一種音色約 100 MB，手機容易吃不消；這樣約剩 1/5。
+ */
+export const GUITAR_LOW = 40; // E2：標準調弦六弦空弦
+export const GUITAR_HIGH = 88; // E6：一弦第 24 品
+export const SAMPLE_STEP = 3;
+export const SAMPLE_NOTES: number[] = Array.from(
+  { length: Math.floor((GUITAR_HIGH - GUITAR_LOW) / SAMPLE_STEP) + 1 },
+  (_, i) => GUITAR_LOW + i * SAMPLE_STEP,
+);
+
 /** 刷弦時每條弦間隔（秒）。 */
 export const STRUM_GAP_SEC = 0.03;
 
@@ -102,6 +114,7 @@ export function loadSamples(t: SampleTimbre): Promise<void> {
       const player = create(getContext(), {
         instrumentUrl: sampleUrl(t),
         loadLoopData: false,
+        notesToLoad: { notes: SAMPLE_NOTES, fallback: 'nearest' },
         onLoadProgress: ({ loaded, total }) => patch(t, { loaded, total }),
       });
       await player.ready;

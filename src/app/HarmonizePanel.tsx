@@ -10,6 +10,7 @@ import {
   inferKeyFromMelody,
   midiName,
   spellerForKey,
+  toProgressionItems,
   voiceChords,
   type ChordChoice,
   type Fret,
@@ -33,7 +34,8 @@ interface Props {
   hasChords: boolean;
   onLockKey: (k: KeyLock | null) => void;
   /** 把配好的和弦（指法）加進這個段落 */
-  onAdopt: (frets: Fret[][], mode: 'append' | 'replace') => void;
+  /** 把配好的和弦（指法與拍數，相鄰相同的已合併）加進這個段落，連同偵測到的速度 */
+  onAdopt: (items: { frets: Fret[]; beats: number }[], mode: 'append' | 'replace', bpm: number) => void;
 }
 
 const modeName = (m: 'major' | 'minor') => (m === 'major' ? '大調' : '小調');
@@ -108,8 +110,9 @@ export function HarmonizePanel({ timed, hasMelodyText, keyLock, hasChords, onLoc
   };
 
   const adopt = (mode: 'append' | 'replace') => {
-    onAdopt(voicings, mode);
-    setAdopted(`已把 ${voicings.length} 個和弦${mode === 'replace' ? '取代進' : '加進'}這個段落的和弦進行`);
+    const items = toProgressionItems(voicings, winBeats);
+    onAdopt(items, mode, bpm);
+    setAdopted(`已把 ${items.length} 個和弦（${bpm} BPM，相同的相鄰和弦已合併）${mode === 'replace' ? '取代進' : '加進'}這個段落的和弦進行`);
   };
 
   const numberField = (id: string, label: string, value: number, min: number, max: number, on: (n: number) => void) => (
@@ -213,7 +216,7 @@ export function HarmonizePanel({ timed, hasMelodyText, keyLock, hasChords, onLoc
             <button type="button" className="btn" onClick={() => adopt('replace')}>取代現有和弦</button>
           </>
         ) : (
-          <button type="button" className="btn btn-primary" onClick={() => adopt('append')}>採用這 {voicings.length} 個和弦</button>
+          <button type="button" className="btn btn-primary" onClick={() => adopt('append')}>採用這 {toProgressionItems(voicings, winBeats).length} 個和弦</button>
         )}
       </div>
       {adopted && <p className="notice" role="status">{adopted}，往上看第 2 區。</p>}

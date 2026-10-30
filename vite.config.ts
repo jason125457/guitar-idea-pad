@@ -13,7 +13,8 @@ function precacheManifest(): Plugin {
     generateBundle: {
       order: 'post',
       handler(_options, bundle) {
-        const files = Object.keys(bundle).filter((f) => !f.endsWith('.map'));
+        // .woff 只是給極舊瀏覽器的備援（現代瀏覽器都用 .woff2），不必預先下載
+        const files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && !f.endsWith('.woff'));
         this.emitFile({ type: 'asset', fileName: 'precache.json', source: JSON.stringify({ files }) });
       },
     },
@@ -26,5 +27,10 @@ export default defineConfig({
     // 兩個頁面：主程式與哼唱音高偵測實驗室（路徑相對於專案根目錄）
     rollupOptions: { input: { main: 'index.html', pitchLab: 'pitch-lab.html' } },
   },
-  test: { environment: 'node', include: ['src/**/*.test.ts'] },
+  server: {
+    // 連續快速存檔時（編輯器或工具一秒內寫好幾次），等檔案寫完、大小穩定後才通知 Vite，
+    // 否則可能讀到中途的內容、之後又收不到最後一次變更，開發伺服器就停在舊版本。
+    watch: { awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } },
+  },
+  test: { environment: 'node', include: ['src/**/*.test.{ts,tsx,js}'] },
 });

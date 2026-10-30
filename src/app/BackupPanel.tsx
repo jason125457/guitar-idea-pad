@@ -20,6 +20,23 @@ function readLastBackup(): number | undefined {
   }
 }
 
+const REMIND_AFTER_DAYS = 7;
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * 該提醒備份了嗎：有實際內容（和弦或旋律），且在上次備份之後改過、距離上次備份已超過一週（或從沒備份）。
+ * 回傳摺疊標題旁的提示文字；不需要提醒時回傳空字串。
+ */
+export function backupReminder(ideas: Idea[], lastBackup: number | undefined, now: number): string {
+  const withContent = ideas.filter((i) => i.sections.some((s) => s.progression.length > 0 || s.melody.trim()));
+  if (withContent.length === 0) return '';
+  const changedSince = withContent.some((i) => lastBackup === undefined || i.updatedAt > lastBackup);
+  if (!changedSince) return '';
+  if (lastBackup === undefined) return '還沒備份過';
+  const days = Math.floor((now - lastBackup) / DAY);
+  return days >= REMIND_AFTER_DAYS ? `${days} 天沒備份` : '';
+}
+
 function download(filename: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   const a = document.createElement('a');
@@ -46,6 +63,7 @@ export function BackupPanel({ ideas, current, onImport }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<Notice>();
   const [lastBackup, setLastBackup] = useState<number | undefined>(readLastBackup);
+  const reminder = backupReminder(ideas, lastBackup, Date.now());
   const [persisted, setPersisted] = useState<boolean | undefined>();
 
   // 請瀏覽器把資料標成「持久」，降低空間不足時被自動清掉的機會（不能防止使用者手動清除）
@@ -108,7 +126,10 @@ export function BackupPanel({ ideas, current, onImport }: Props) {
 
   return (
     <details className="backup panel">
-      <summary>備份與還原</summary>
+      <summary>
+        備份與還原
+        {reminder && <span className="backup-due">{reminder}</span>}
+      </summary>
       <p className="help">
         靈感只存在這台裝置的瀏覽器裡。清除網站資料、換手機或換瀏覽器前，請先匯出備份檔。
       </p>

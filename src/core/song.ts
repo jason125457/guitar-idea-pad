@@ -26,6 +26,31 @@ export const labelName = (l: SectionLabel): string => SECTION_LABELS.find((x) =>
 export interface ProgressionItem {
   id: string;
   frets: Fret[];
+  /** 這個和弦佔幾拍；未設定時視為 DEFAULT_BEATS（4/4 的一小節） */
+  beats?: number;
+}
+
+export const DEFAULT_BPM = 90;
+export const DEFAULT_BEATS = 4;
+export const BPM_RANGE: [number, number] = [40, 240];
+export const BEAT_CHOICES = [1, 2, 3, 4, 6, 8];
+
+export const beatsOf = (p: Pick<ProgressionItem, 'beats'>): number => p.beats ?? DEFAULT_BEATS;
+export const bpmOf = (s: Pick<Section, 'bpm'>): number => s.bpm ?? DEFAULT_BPM;
+
+/** 每個和弦的開始時間與長度（秒），依段落速度與各和弦拍數計算。 */
+export function progressionTimeline(
+  progression: readonly Pick<ProgressionItem, 'beats'>[],
+  bpm: number,
+): { startSec: number; durSec: number }[] {
+  const beat = 60 / bpm;
+  let t = 0;
+  return progression.map((p) => {
+    const dur = beatsOf(p) * beat;
+    const slot = { startSec: t, durSec: dur };
+    t += dur;
+    return slot;
+  });
 }
 
 export interface KeyLock {
@@ -54,6 +79,8 @@ export interface Section {
    * 兩者音高對不上，就視為失效（見 timedMelodyOf）。
    */
   melodyTimed?: TimedNote[];
+  /** 播放速度（每分鐘拍數）；未設定時為 DEFAULT_BPM */
+  bpm?: number;
 }
 
 /** 旋律文字與時間資料音高完全對得上才回傳；否則代表旋律被手動改過，時間資料不可信。 */
@@ -163,7 +190,7 @@ export function duplicateIdea(idea: Idea, now = Date.now()): Idea {
     sections: idea.sections.map((s) => ({
       ...s,
       id: newId('s'),
-      progression: s.progression.map((p) => ({ id: newId('c'), frets: [...p.frets] })),
+      progression: s.progression.map((p) => ({ ...p, id: newId('c'), frets: [...p.frets] })),
     })),
   };
 }
@@ -216,11 +243,18 @@ export function contrastReference(idea: Idea, section: Section): Section | undef
 const isFret = (f: unknown): f is Fret => f === null || (Number.isInteger(f) && (f as number) >= 0 && (f as number) <= MAX_FRET);
 const isFrets = (x: unknown): x is Fret[] => Array.isArray(x) && x.length === 6 && x.every(isFret);
 
+const validBeats = (b: unknown): b is number => typeof b === 'number' && Number.isFinite(b) && b >= 0.5 && b <= 32;
+const validBpm = (b: unknown): b is number => typeof b === 'number' && Number.isFinite(b) && b >= BPM_RANGE[0] && b <= BPM_RANGE[1];
+
 function normalizeProgression(x: unknown): ProgressionItem[] {
   if (!Array.isArray(x)) return [];
   return x
-    .filter((p): p is { id?: unknown; frets: Fret[] } => typeof p === 'object' && p !== null && isFrets((p as { frets?: unknown }).frets))
-    .map((p) => ({ id: typeof p.id === 'string' ? p.id : newId('c'), frets: [...p.frets] }));
+    .filter((p): p is { id?: unknown; frets: Fret[]; beats?: unknown } => typeof p === 'object' && p !== null && isFrets((p as { frets?: unknown }).frets))
+    .map((p) => {
+      const item: ProgressionItem = { id: typeof p.id === 'string' ? p.id : newId('c'), frets: [...p.frets] };
+      if (validBeats(p.beats)) item.beats = p.beats;
+      return item;
+    });
 }
 
 function normalizeSection(x: unknown): Section | undefined {
@@ -240,6 +274,7 @@ function normalizeSection(x: unknown): Section | undefined {
   };
   const timed = normalizeTimed(o.melodyTimed);
   if (timed) section.melodyTimed = timed;
+  if (validBpm(o.bpm)) section.bpm = Math.round(o.bpm);
   return section;
 }
 

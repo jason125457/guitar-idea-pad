@@ -1,4 +1,4 @@
-import { defaultSpeller, mod12, type Speller } from './pitch';
+import { defaultSpeller, letterIndexOf, mod12, spellWithLetter, type Speller } from './pitch';
 import { QUALITY_LIST, quality, type QualityDef } from './qualities';
 
 /** null = 悶音 */
@@ -41,7 +41,8 @@ export type ParseResult = { ok: true; frets: Fret[] } | { ok: false; error: stri
  * 支援 "8 8 10 9 10 8"、"8,8,10,9,10,8"、"x32010"（全部單位數時可不加空格）。
  */
 export function parseFretInput(text: string): ParseResult {
-  const trimmed = text.trim();
+  // 全形轉半形：中文輸入法常打出「８　８　１０」或「ｘ」
+  const trimmed = text.normalize('NFKC').trim();
   if (!trimmed) return { ok: false, error: '請輸入六個品格，例如 8 8 10 9 10 8' };
 
   let tokens = trimmed.split(/[\s,，、\-/]+/).filter(Boolean);
@@ -130,10 +131,40 @@ export interface ChordRef {
   bassPc: number;
 }
 
+/**
+ * 和弦內某個音程是根音往上第幾級（決定字母）。大多數照半音數查表，少數依和弦類型判斷：
+ * 7#9 的 3 個半音是 ♯9（第 2 級）、減和弦的 6 個半音是 ♭5、maj7#11 的 6 個半音是 ♯11、
+ * 增和弦的 8 個半音是 ♯5、減七和弦的 9 個半音是 𝄫7。
+ */
+export function intervalDegree(q: QualityDef, semitones: number): number {
+  const s = mod12(semitones);
+  const has = (i: number) => q.intervals.includes(i);
+  if (s === 3 && has(4)) return 2;
+  if (s === 6) return has(7) ? 4 : 5;
+  if (s === 8) return has(7) ? 6 : 5;
+  if (s === 9 && q.id === 'dim7') return 7;
+  return [1, 2, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7][s] as number;
+}
+
+/** 和弦內的音依它與根音的關係拼寫（A/C# 而不是 A/Db，E/G# 而不是 E/Ab）。 */
+export function spellChordTone(rootName: string, q: QualityDef, rootPc: number, pc: number, fallback: Speller): string {
+  const degree = intervalDegree(q, pc - rootPc);
+  return spellWithLetter(letterIndexOf(rootName) + degree - 1, pc) ?? fallback(pc);
+}
+
+/** 這個和弦專用的拼寫器：和弦音依級數拼，其他音退回 speller。用於列出和弦組成音。 */
+export function chordToneSpeller(c: ChordRef, speller: Speller = defaultSpeller): Speller {
+  const q = quality(c.qualityId);
+  const root = speller(c.rootPc);
+  const tones = new Set(chordPcs(c.rootPc, q));
+  return (pc) => (tones.has(mod12(pc)) ? spellChordTone(root, q, c.rootPc, pc, speller) : speller(pc));
+}
+
 export function chordSymbol(c: ChordRef, speller: Speller = defaultSpeller): string {
   const q = quality(c.qualityId);
-  const base = `${speller(c.rootPc)}${q.symbol}`;
-  return c.bassPc === c.rootPc ? base : `${base}/${speller(c.bassPc)}`;
+  const root = speller(c.rootPc);
+  const base = `${root}${q.symbol}`;
+  return c.bassPc === c.rootPc ? base : `${base}/${spellChordTone(root, q, c.rootPc, c.bassPc, speller)}`;
 }
 
 /** 六行 ASCII Tab（一弦在上）。 */

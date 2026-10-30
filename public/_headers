@@ -5,6 +5,10 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: microphone=(self), camera=(), geolocation=()
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; media-src 'self' blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+# CSP 說明：script/connect 允許 Cloudflare 自動插入的流量統計（若在後台關掉 Web Analytics 可一併移除）；
+# style 的 'unsafe-inline' 是給 React 的 style 屬性（例如音準指針位置）用，沒有任何內嵌 <script>。
 
 # service worker 與預快取清單一定要拿最新的，否則手機收不到新版
 /sw.js

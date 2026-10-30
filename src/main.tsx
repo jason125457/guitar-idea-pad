@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerServiceWorker } from './audio/offline';
 import { preloadSelected } from './audio/sound';
 import { App } from './app/App';
+import './app/fonts';
 import './app/styles.css';
 
 createRoot(document.getElementById('root') as HTMLElement).render(

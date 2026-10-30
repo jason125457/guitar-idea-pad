@@ -24,8 +24,10 @@ export interface ChordFunctionInfo {
 }
 
 const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
-const MINOR_HOME = [0, 2, 3, 5, 7, 8, 10, 11]; // 自然小調 ∪ 和聲小調
 const NATURAL_MINOR = [0, 2, 3, 5, 7, 8, 10];
+const HARMONIC_MINOR = [0, 2, 3, 5, 7, 8, 11];
+/** 小調的導音（升 7 級）只在屬功能和弦（V、V7、vii°、vii°7）裡算調內，避免小調比大調多一個「家」音而被高估。 */
+const MINOR_DOMINANT_ROOTS = [7, 11];
 
 const ROMAN_MAJOR = ['I', '♭II', 'II', '♭III', 'III', 'IV', '♯IV', 'V', '♭VI', 'VI', '♭VII', 'VII'];
 const ROMAN_MINOR = ['I', '♭II', 'II', 'III', '♯III', 'IV', '♭V', 'V', 'VI', '♯VI', 'VII', '♯VII'];
@@ -46,11 +48,18 @@ export function scalePcsForKey(key: Pick<KeyGuess, 'tonic' | 'mode'>): number[] 
   return (key.mode === 'major' ? MAJOR_SCALE : NATURAL_MINOR).map((i) => mod12(key.tonic + i));
 }
 
+/** 主和弦：大調的大三和弦系列，或藍調的 I7；小調的小三和弦系列。 */
 function isTonicChord(c: ChordRef, tonic: number, mode: Mode): boolean {
   if (c.rootPc !== tonic) return false;
   const fam: Family = quality(c.qualityId).family;
-  return mode === 'major' ? fam === 'major' : fam === 'minor';
+  return mode === 'major' ? fam === 'major' || fam === 'dominant' : fam === 'minor';
 }
+
+/** 具屬功能的和弦：屬七系列，或（常被省略七音的）大三和弦。 */
+const isDominantLike = (qualityId: string): boolean => {
+  const q = quality(qualityId);
+  return q.family === 'dominant' || q.id === 'maj';
+};
 
 export function romanNumeral(c: ChordRef, tonic: number, mode: Mode): string {
   const rel = mod12(c.rootPc - tonic);
@@ -70,11 +79,14 @@ export function classifyChord(c: ChordRef, tonic: number, mode: Mode): ChordFunc
   const rel = chordPcs(c.rootPc, q).map((p) => mod12(p - tonic));
   const relRoot = mod12(c.rootPc - tonic);
   const roman = romanNumeral(c, tonic, mode);
-  const home = mode === 'major' ? MAJOR_SCALE : MINOR_HOME;
   const parallel = mode === 'major' ? NATURAL_MINOR : MAJOR_SCALE;
   const fn = FUNCTION_BY_REL[relRoot] ?? 'other';
 
-  if (subsetOf(rel, home)) return { roman, function: fn, tag: 'diatonic', weight: 1 };
+  const diatonic =
+    mode === 'major'
+      ? subsetOf(rel, MAJOR_SCALE)
+      : subsetOf(rel, NATURAL_MINOR) || (MINOR_DOMINANT_ROOTS.includes(relRoot) && subsetOf(rel, HARMONIC_MINOR));
+  if (diatonic) return { roman, function: fn, tag: 'diatonic', weight: 1 };
   if (subsetOf(rel, parallel)) {
     return {
       roman,
@@ -84,12 +96,22 @@ export function classifyChord(c: ChordRef, tonic: number, mode: Mode): ChordFunc
       weight: 0.6,
     };
   }
-  if (q.family === 'dominant') {
+  // 拿坡里和弦：♭II 大三和弦（常見於終止前）
+  if (relRoot === 1 && q.family === 'major') {
+    return { roman, function: 'S', tag: 'borrowed', detail: 'neapolitan', weight: 0.4 };
+  }
+  if (isDominantLike(q.id)) {
     const secTargets = mode === 'major' ? MAJOR_TARGETS_SECONDARY : MINOR_TARGETS_SECONDARY;
     const secTarget = mod12(relRoot - 7);
     if (secTargets.includes(secTarget)) {
       const targetRoman = (mode === 'major' ? ROMAN_MAJOR : ROMAN_MINOR)[secTarget] as string;
       return { roman, function: 'D', tag: 'secondary-dominant', detail: `V/${targetRoman}`, weight: 0.5 };
+    }
+  }
+  if (q.family === 'dominant') {
+    // 藍調／混合利地亞：大調裡的 IV7、♭VII7
+    if (mode === 'major' && (relRoot === 5 || relRoot === 10)) {
+      return { roman, function: relRoot === 5 ? 'S' : 'D', tag: 'borrowed', detail: 'blues', weight: 0.5 };
     }
     const triTargets = mode === 'major' ? MAJOR_TARGETS_TRITONE : MINOR_TARGETS_TRITONE;
     const triTarget = mod12(relRoot - 1);
@@ -101,23 +123,26 @@ export function classifyChord(c: ChordRef, tonic: number, mode: Mode): ChordFunc
   return { roman, function: 'other', tag: 'chromatic', weight: 0 };
 }
 
+/**
+ * 調性分數：每個和弦在這個調裡的角色加總，再加上幾個「聽起來像這個調」的線索：
+ * 第一個和弦是主和弦（歌曲與循環樂句多半從主和弦開始，比結尾和弦可靠）、結尾回到主和弦、
+ * 屬和弦解決到主和弦、副屬和弦解決到它的目標。
+ */
 function scoreKey(chords: ChordRef[], tonic: number, mode: Mode): number {
   let score = 0;
   chords.forEach((c, i) => {
-    score += classifyChord(c, tonic, mode).weight;
+    const info = classifyChord(c, tonic, mode);
+    score += info.weight;
     const next = chords[i + 1];
-    if (next) {
-      const isDominantToTonic =
-        quality(c.qualityId).family === 'dominant' &&
-        mod12(c.rootPc - tonic) === 7 &&
-        isTonicChord(next, tonic, mode);
-      if (isDominantToTonic) score += 0.3;
-    }
+    if (!next) return;
+    const rel = mod12(c.rootPc - tonic);
+    if (rel === 7 && isDominantLike(c.qualityId) && isTonicChord(next, tonic, mode)) score += 0.3;
+    if (info.tag === 'secondary-dominant' && mod12(next.rootPc - c.rootPc) === 5) score += 0.2;
   });
   const first = chords[0];
   const last = chords[chords.length - 1];
-  if (first && isTonicChord(first, tonic, mode)) score += 0.3;
-  if (last && isTonicChord(last, tonic, mode)) score += 0.5;
+  if (first && isTonicChord(first, tonic, mode)) score += 0.6;
+  if (last && isTonicChord(last, tonic, mode)) score += 0.4;
   return score;
 }
 
@@ -134,7 +159,9 @@ export function inferKey(chords: ChordRef[], topN = 3): KeyGuess[] {
   const top = all[0] as Omit<KeyGuess, 'confidence'>;
   const second = all[1] as Omit<KeyGuess, 'confidence'>;
   const gap = top.score - second.score;
-  const confidence = Math.max(0, Math.min(1, gap / (0.6 * chords.length + 0.8)));
+  // 和弦太少時本來就判斷不了調性（一個 C 和弦可能在 C、F、G 調），把握度依和弦數打折
+  const enough = Math.min(1, chords.length / 4);
+  const confidence = Math.max(0, Math.min(1, (gap / (0.6 * chords.length + 0.8)) * enough));
   return all.slice(0, topN).map((k, i) => ({ ...k, confidence: i === 0 ? confidence : 0 }));
 }
 

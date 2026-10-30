@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerServiceWorker } from '../audio/offline';
+import '../app/fonts';
 import '../app/styles.css';
 import './lab.css';
 import { LabApp } from './LabApp';

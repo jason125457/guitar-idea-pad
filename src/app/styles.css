@@ -147,6 +147,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .chip-main { display: grid; gap: 2px; text-align: left; border: 0; background: transparent; padding: var(--s2) var(--s3); min-height: 44px; }
 .chip-name { font-weight: 600; font-size: 18px; }
 .chip-roman { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.chip-beats { display: flex; align-items: stretch; border-left: 1px solid var(--border); }
+.chip-beats select {
+  min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 13px;
+  padding: 0 var(--s1) 0 var(--s2); cursor: pointer;
+}
+.chip-beats select:hover { color: var(--text); }
+.bpm { display: inline-flex; align-items: center; gap: var(--s2); font-size: 14px; color: var(--muted); }
+.bpm .input-sm { width: 84px; min-height: 48px; }
 .chip-x { width: 44px; border: 0; border-left: 1px solid var(--border); background: transparent; font-size: 20px; color: var(--muted); }
 .chip-x:hover { color: var(--danger); }
 
@@ -236,6 +244,11 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .hum .lab-link { margin-left: var(--s2); color: var(--accent); }
 .hum-rec { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
 .hum-live { font-size: 32px; font-weight: 600; color: var(--accent); min-width: 3ch; }
+.hum-level { flex: 1 1 200px; display: grid; gap: var(--s1); }
+.level-bar { height: 10px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
+.level-fill { height: 100%; background: var(--ok); transition: width 80ms linear; }
+.level-fill.hot { background: var(--danger); }
+.level-hint { font-size: 13px; color: var(--muted); }
 .hum-notes { list-style: none; margin: 0 0 var(--s3); padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
 .hum-note {
   min-height: 44px; padding: 0 var(--s3); border-radius: 999px; border: 1px solid var(--border);
@@ -245,6 +258,21 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .hum-cents { font-size: 12px; font-weight: 400; color: var(--muted); font-family: var(--mono); }
 .check { display: flex; gap: var(--s2); align-items: flex-start; font-size: 14px; color: var(--muted); margin: var(--s2) 0; min-height: 44px; }
 .check input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+
+/* ── 復原提示 ── */
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--s4) + env(safe-area-inset-bottom, 0px)); z-index: 100;
+  transform: translateX(-50%); width: min(560px, calc(100vw - 2 * var(--s4)));
+  display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s2) var(--s2) var(--s4);
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); animation: toast-in 180ms ease-out;
+}
+.toast-msg { flex: 1; font-size: 14px; }
+.toast-undo { flex: none; border-color: var(--accent); color: var(--accent); background: transparent; }
+.toast-x { flex: none; width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 20px; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.warn-notice { border-left-color: var(--warn); display: grid; gap: var(--s2); }
+.warn-notice p { margin: 0; }
 
 /* ── 音色與離線 ── */
 .sound, .backup { margin-bottom: var(--s3); }
@@ -277,6 +305,10 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .hz-tab summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 14px; }
 
 .backup { margin-bottom: var(--s5); }
+.backup-due {
+  margin-left: var(--s3); padding: 1px var(--s2); border-radius: 999px; font-size: 12px; font-weight: 500;
+  color: var(--warn); border: 1px solid currentColor;
+}
 .backup summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; font-size: 18px; }
 .backup[open] summary { margin-bottom: var(--s2); }
 .notice { margin: var(--s3) 0 0; padding: var(--s2) var(--s3); border-radius: 8px; border-left: 4px solid var(--ok); background: var(--bg); font-size: 14px; }

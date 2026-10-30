@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createIdea, duplicateIdea as cloneIdea, type Idea } from '../core';
 import { deleteIdea, listIdeas, putIdea } from './db';
 import { clearLegacy, readLegacyIdea } from './legacy';
+import { applyRemote, openSync } from './tabSync';
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -59,6 +60,7 @@ export function useIdeaStore() {
   const pending = useRef(new Map<string, Idea>());
   const timer = useRef<number | undefined>(undefined);
   const persistent = useRef(true);
+  const sync = useRef<ReturnType<typeof openSync> | null>(null);
 
   const flush = useCallback(async () => {
     window.clearTimeout(timer.current);
@@ -68,7 +70,10 @@ export function useIdeaStore() {
     if (batch.length === 0 || !persistent.current) return;
     setSaveState('saving');
     try {
-      for (const idea of batch) await putIdea(idea);
+      for (const idea of batch) {
+        await putIdea(idea);
+        sync.current?.post({ type: 'saved', idea });
+      }
       if (pending.current.size === 0) setSaveState('saved');
     } catch {
       setSaveState('error');
@@ -115,6 +120,22 @@ export function useIdeaStore() {
     return () => {
       cancelled = true;
     };
+  }, [commit, setActive]);
+
+  // 其他分頁存檔或刪除時同步過來（較新的勝出）
+  useEffect(() => {
+    sync.current = openSync((msg) => {
+      // 本分頁還沒存的修改比較新，不要被覆蓋
+      if (msg.type === 'saved' && pending.current.has(msg.idea.id)) return;
+      const next = applyRemote(ideasRef.current, msg);
+      if (next === ideasRef.current) return;
+      if (next.length === 0) return; // 另一個分頁刪光了：保留本分頁，讓它自己建立新的
+      commit(next);
+      if (msg.type === 'deleted' && activeRef.current === msg.id) {
+        setActive(([...next].sort((a, b) => b.updatedAt - a.updatedAt)[0] as Idea).id);
+      }
+    });
+    return () => sync.current?.close();
   }, [commit, setActive]);
 
   // 離開頁面前把尚未寫入的內容送出
@@ -178,6 +199,7 @@ export function useIdeaStore() {
       if (persistent.current) {
         try {
           await deleteIdea(id);
+          sync.current?.post({ type: 'deleted', id });
         } catch {
           setSaveState('error');
           return; // 沒刪成功就不要從畫面移除，避免畫面與儲存不一致

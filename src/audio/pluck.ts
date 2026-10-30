@@ -85,6 +85,14 @@ export function scheduleChords(c: AudioContext, t0: number, chords: readonly Tim
   }
 }
 
+/** 依各和弦自己的開始時間與長度播放（速度與拍數由呼叫端換算成秒）。回傳總時長（秒）。 */
+export function playTimedChords(chords: readonly TimedChord[]): number {
+  stopAll();
+  const c = context();
+  scheduleChords(c, c.currentTime + 0.05, chords);
+  return chords.reduce((end, ch) => Math.max(end, ch.startSec + ch.durSec), 0);
+}
+
 /** 依序播放多個和弦；每個和弦由低到高輕刷。回傳總時長（秒）。 */
 export function playChords(chords: number[][], secondsPerChord = 1.3): number {
   stopAll();

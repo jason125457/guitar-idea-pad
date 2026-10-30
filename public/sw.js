@@ -6,7 +6,9 @@
  *
  * 策略：取樣與 /assets/（檔名含雜湊，內容不會變）→ 先看快取；
  *       頁面與其他檔案 → 先連網路，連不上才用快取（所以有網路時永遠是最新版）。
+ *       開頁時網路 3 秒還沒回應（訊號很差但沒斷線）就先用快取開，網路回來的新版會在背景存起來，下次生效。
  */
+const NAV_TIMEOUT_MS = 3000;
 const APP = 'gip-app';
 const SAMPLES = 'gip-samples-v1';
 
@@ -38,20 +40,29 @@ async function cacheFirst(request, cacheName) {
   return res;
 }
 
-async function networkFirst(request, cacheName) {
+async function networkFirst(event, request, cacheName, timeoutMs) {
   const cache = await caches.open(cacheName);
-  try {
-    const res = await fetch(request);
+  const fromCache = async () =>
+    (await cache.match(request, MATCH)) ||
+    (await cache.match(request, { ...MATCH, ignoreSearch: true })) ||
+    // 導覽請求連不上也沒快取：退回已快取的首頁
+    (request.mode === 'navigate' ? await cache.match(self.registration.scope, MATCH) : undefined);
+  const fromNetwork = fetch(request).then((res) => {
     if (res.ok && res.status === 200) cache.put(request, res.clone());
     return res;
+  });
+  // 就算先用了快取回應，也讓網路請求跑完把新版存起來
+  event.waitUntil(fromNetwork.then(() => undefined, () => undefined));
+
+  try {
+    if (!timeoutMs) return await fromNetwork;
+    const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
+    const winner = await Promise.race([fromNetwork, timeout]);
+    if (winner !== 'timeout') return winner;
+    return (await fromCache()) || (await fromNetwork); // 沒有快取就只能繼續等網路
   } catch (err) {
-    const hit = (await cache.match(request, MATCH)) || (await cache.match(request, { ...MATCH, ignoreSearch: true }));
+    const hit = await fromCache();
     if (hit) return hit;
-    // 導覽請求連不上也沒快取：退回已快取的首頁
-    if (request.mode === 'navigate') {
-      const home = await cache.match(self.registration.scope, MATCH);
-      if (home) return home;
-    }
     throw err;
   }
 }
@@ -68,7 +79,7 @@ self.addEventListener('fetch', (event) => {
   } else if (url.pathname.includes('/assets/')) {
     event.respondWith(cacheFirst(request, APP));
   } else {
-    event.respondWith(networkFirst(request, APP));
+    event.respondWith(networkFirst(event, request, APP, request.mode === 'navigate' ? NAV_TIMEOUT_MS : 0));
   }
 });
 
@@ -79,8 +90,15 @@ async function precache() {
   const scope = self.registration.scope;
   const urls = new Set([scope, ...files.map((f) => new URL(f, scope).href)]);
   const cache = await caches.open(APP);
+  // /assets/ 的檔名含內容雜湊：已經在快取裡就一定是同一份，不用每次開頁都重新下載（以前每次約 320 KB）
+  const needed = [];
+  for (const u of urls) {
+    const immutable = new URL(u).pathname.includes('/assets/');
+    if (immutable && (await cache.match(u, MATCH))) continue;
+    needed.push(u);
+  }
   await Promise.all(
-    [...urls].map(async (u) => {
+    needed.map(async (u) => {
       const r = await fetch(u, { cache: 'reload' });
       if (r.ok && r.status === 200) await cache.put(u, r);
     }),
@@ -89,7 +107,7 @@ async function precache() {
   for (const req of await cache.keys()) {
     if (!urls.has(req.url)) await cache.delete(req);
   }
-  return urls.size;
+  return { total: urls.size, fetched: needed.length };
 }
 
 self.addEventListener('message', (event) => {
@@ -97,7 +115,7 @@ self.addEventListener('message', (event) => {
   const reply = (msg) => event.source && event.source.postMessage(msg);
   event.waitUntil(
     precache().then(
-      (count) => reply({ type: 'PRECACHED', count }),
+      ({ total, fetched }) => reply({ type: 'PRECACHED', count: total, fetched }),
       (err) => reply({ type: 'PRECACHE_FAILED', message: String(err && err.message ? err.message : err) }),
     ),
   );

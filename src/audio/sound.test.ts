@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SAMPLE_TIMBRES, TIMBRES, sampleUrl, strumVelocity } from './sound';
+import { SAMPLE_NOTES, SAMPLE_TIMBRES, TIMBRES, sampleUrl, strumVelocity } from './sound';
 import { formatBytes } from './offline';
 
 describe('sampleUrl', () => {
@@ -7,6 +7,20 @@ describe('sampleUrl', () => {
     expect(sampleUrl('steel', '/')).toBe('/samples/FluidR3_GM/acoustic_guitar_steel-mp3.js');
     expect(sampleUrl('nylon', '/app/')).toBe('/app/samples/FluidR3_GM/acoustic_guitar_nylon-mp3.js');
     for (const t of SAMPLE_TIMBRES) expect(sampleUrl(t, '/')).not.toMatch(/^https?:/);
+  });
+});
+
+describe('SAMPLE_NOTES', () => {
+  it('covers the whole guitar range so every note is at most one semitone from a sample', () => {
+    expect(SAMPLE_NOTES[0]).toBe(40);
+    expect(SAMPLE_NOTES[SAMPLE_NOTES.length - 1]).toBe(88);
+    for (let m = 40; m <= 88; m++) {
+      const nearest = Math.min(...SAMPLE_NOTES.map((s) => Math.abs(s - m)));
+      expect(nearest).toBeLessThanOrEqual(1);
+    }
+  });
+  it('decodes far fewer buffers than the 88 in the file', () => {
+    expect(SAMPLE_NOTES.length).toBeLessThanOrEqual(20);
   });
 });
 

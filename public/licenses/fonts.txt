@@ -1,0 +1,8 @@
+本網站自架的字型（拉丁字母子集，取自 @fontsource/poppins 與 @fontsource/righteous，未經修改）：
+
+- Poppins — Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins)
+  授權全文：poppins-OFL.txt
+- Righteous — Copyright (c) 2011 by Brian J. Bonislawsky DBA Astigmatic (AOETI), with Reserved Font Name "Righteous"
+  授權全文：righteous-OFL.txt
+
+兩者皆以 SIL Open Font License, Version 1.1 授權。

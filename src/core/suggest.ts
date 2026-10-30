@@ -135,7 +135,9 @@ export function suggestNext(chords: AnalyzedChord[], key: Pick<KeyGuess, 'tonic'
   // 半音（±1）優先；調外的經過和弦也接受，那正是這種手法的味道。已出現過的和弦不重複。
   const used = new Set(chords.map((c) => (c.best ? chordSymbol(c.best, speller) : '')));
   let bestShift: { d: number; frets: Fret[]; chord: ChordRef; rank: number; tag: ChordTag } | undefined;
-  for (const ds of [[-1, 1], [-2, 2]]) {
+  // 有空弦的指型（例如 x32010）整把平移後空弦會變成要按的音，其實是另一個指型，不算平移
+  const movable = !prev.some((f) => f === 0);
+  for (const ds of movable ? [[-1, 1], [-2, 2]] : []) {
     for (const d of ds) {
       if (prev.some((f) => f !== null && (f + d < 0 || f + d > 17))) continue;
       const shifted = prev.map((f) => (f === null ? null : f + d));

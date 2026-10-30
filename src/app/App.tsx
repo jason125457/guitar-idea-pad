@@ -1,11 +1,18 @@
-import { useMemo, useState } from 'react';
-import { playChords, stopAll } from '../audio/pluck';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { playChords, playTimedChords, stopAll } from '../audio/pluck';
 import {
+  BEAT_CHOICES,
+  BPM_RANGE,
+  DEFAULT_BEATS,
   addSection,
   analyzeProgression,
+  beatsOf,
+  bpmOf,
+  progressionTimeline,
   analyzeSection,
   analyzeVoicing,
   chordSymbol,
+  chordToneSpeller,
   contrastCheck,
   contrastReference,
   findChromaticLines,
@@ -18,6 +25,7 @@ import {
   midiName,
   midisOf,
   newId,
+  notesToMelodyText,
   parseFretInput,
   parseMelodyText,
   removeSection,
@@ -46,6 +54,7 @@ import { HarmonizePanel } from './HarmonizePanel';
 import { HumRecorder } from './HumRecorder';
 import { IdeaBar } from './IdeaBar';
 import { SoundPanel } from './SoundPanel';
+import { UndoToast } from './UndoToast';
 
 const EMPTY: Fret[] = [null, null, null, null, null, null];
 const EXAMPLE: Fret[][] = [
@@ -71,7 +80,14 @@ function tagLabel(info: Pick<ChordFunctionInfo, 'tag' | 'detail'>): string {
     case 'diatonic':
       return '順階';
     case 'borrowed':
-      return info.detail === 'parallel-minor' ? '借用和弦（平行小調）' : '借用和弦（平行大調）';
+      return (
+        {
+          'parallel-minor': '借用和弦（平行小調）',
+          'parallel-major': '借用和弦（平行大調）',
+          neapolitan: '拿坡里和弦（♭II）',
+          blues: '藍調屬七',
+        } as Record<string, string>
+      )[info.detail ?? ''] ?? '借用和弦';
     case 'secondary-dominant':
       return `副屬和弦 ${info.detail ?? ''}`;
     case 'tritone-sub':
@@ -124,11 +140,28 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const names = sectionNames(idea);
   const patch = (p: Parameters<typeof updateSection>[2]) => store.updateActive((i) => updateSection(i, section.id, p));
 
+  // 刪除／清空／取代之後可以復原：記下動作前的整個靈感；之後若又有其他修改就收起提示，避免復原時連帶蓋掉新的修改
+  const [undo, setUndo] = useState<{ message: string; before: Idea; after: Idea } | null>(null);
+  const withUndo = (message: string, p: Parameters<typeof updateSection>[2]) => {
+    const before = idea;
+    let after: Idea | undefined;
+    store.updateActive((i) => (after = updateSection(i, section.id, p)));
+    if (after) setUndo({ message, before, after });
+  };
+  useEffect(() => {
+    if (undo && idea !== undo.after) setUndo(null);
+  }, [idea, undo]);
+
   const items = section.progression;
   const locked = section.keyLock;
 
   const current = useMemo(() => analyzeVoicing(frets), [frets]);
-  const sa = useMemo(() => analyzeSection(section), [section]);
+  // 只在和弦或鎖定的調改變時重新分析；打旋律時 section 物件也會換新，但和弦分析不需要重算
+  const sa = useMemo(
+    () => analyzeSection({ ...section, melody: '' }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [section.progression, section.keyLock],
+  );
   const { analyzed, chords: refs, keys, key } = sa;
   const speller = useMemo(() => spellerForKey(key?.tonic ?? 0, key?.mode ?? 'major'), [key?.tonic, key?.mode]);
   const infos = useMemo(() => (key ? analyzeProgression(refs, key) : []), [refs, key]);
@@ -143,9 +176,11 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const melody = useMemo(() => parseMelodyText(section.melody), [section.melody]);
   const timed = useMemo(() => timedMelodyOf(section), [section]);
   const lastMelody = melody.midis[melody.midis.length - 1];
+  // 建議卡片用延後的值：打字時先更新輸入框，建議在空檔再重算
+  const deferredLastMelody = useDeferredValue(lastMelody);
   const suggestions = useMemo(
-    () => (key && analyzed.length ? suggestNext(analyzed, key, lastMelody) : []),
-    [analyzed, key, lastMelody],
+    () => (key && analyzed.length ? suggestNext(analyzed, key, deferredLastMelody) : []),
+    [analyzed, key, deferredLastMelody],
   );
 
   // 主歌／預副歌：以同一靈感裡的副歌為對比參考
@@ -183,8 +218,29 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   };
 
   const add = (f: Fret[]) => patch({ progression: [...items, { id: newId('c'), frets: [...f] }] });
-  const remove = (id: string) => patch({ progression: items.filter((x) => x.id !== id) });
   const label = (c: ChordRef | undefined) => (c ? chordSymbol(c, speller) : '?');
+  const remove = (id: string) => {
+    const i = items.findIndex((x) => x.id === id);
+    withUndo(`已刪除 ${label(analyzed[i]?.best)}`, { progression: items.filter((x) => x.id !== id) });
+  };
+  // 旋律文字被手動改過、和錄音時的節奏對不上（節奏資料還在，只是暫時不能用）
+  const timingBroken = !!section.melodyTimed?.length && !timed;
+
+  // 速度輸入框：打字時先存文字，離開或按 Enter 才寫回（避免輸入「1」時就被夾成 40）
+  const bpm = bpmOf(section);
+  const [bpmText, setBpmText] = useState(String(bpm));
+  useEffect(() => setBpmText(String(bpm)), [bpm, section.id]);
+  const commitBpm = () => {
+    const n = Math.round(Number(bpmText));
+    if (!Number.isFinite(n) || bpmText.trim() === '') return setBpmText(String(bpm));
+    const clamped = Math.min(BPM_RANGE[1], Math.max(BPM_RANGE[0], n));
+    setBpmText(String(clamped));
+    if (clamped !== bpm) patch({ bpm: clamped });
+  };
+  const playProgression = () => {
+    const timeline = progressionTimeline(items, bpm);
+    playTimedChords(items.map((it, i) => ({ midis: midisOfFrets(it.frets), ...(timeline[i] as { startSec: number; durSec: number }) })));
+  };
   const keyButtons = keys.slice(0, 3);
   const showContrastHint = !ref && (section.label === 'verse' || section.label === 'prechorus');
 
@@ -255,7 +311,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               <>
                 <div className="now-name">{chordSymbol(current.best, key ? speller : undefined)}</div>
                 <div className="now-notes mono">
-                  {current.notes.map((n) => `${speller(n.pc)}${Math.floor(n.midi / 12) - 1}`).join(' ')}
+                  {current.notes.map((n) => midiName(n.midi, chordToneSpeller(current.best!, key ? speller : undefined))).join(' ')}
                 </div>
                 {current.candidates.length > 1 && (
                   <div className="alts">
@@ -307,6 +363,19 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                           <span className="chip-roman">{info?.roman ?? ''}</span>
                           <span className={`tag tag-${info?.tag ?? 'chromatic'}`}>{info ? tagLabel(info) : ''}</span>
                         </button>
+                        <label className="chip-beats">
+                          <span className="sr-only">{label(a?.best)} 的拍數</span>
+                          <select
+                            value={beatsOf(it)}
+                            onChange={(e) =>
+                              patch({ progression: items.map((x) => (x.id === it.id ? { ...x, beats: Number(e.target.value) } : x)) })
+                            }
+                          >
+                            {[...new Set([...BEAT_CHOICES, beatsOf(it)])].sort((p, q) => p - q).map((b) => (
+                              <option key={b} value={b}>{b} 拍</option>
+                            ))}
+                          </select>
+                        </label>
                         <button type="button" className="chip-x" onClick={() => remove(it.id)} aria-label={`刪除 ${label(a?.best)}`}>
                           ×
                         </button>
@@ -314,14 +383,32 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                     );
                   })}
                 </ol>
-                <div className="row">
-                  <button type="button" className="btn btn-primary" onClick={() => playChords(items.map((i) => midisOfFrets(i.frets)))}>
+                <div className="row wrap">
+                  <button type="button" className="btn btn-primary" onClick={playProgression}>
                     ▶ 播放進行
                   </button>
+                  <label className="bpm">
+                    <span>速度</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      className="input input-sm mono"
+                      min={BPM_RANGE[0]}
+                      max={BPM_RANGE[1]}
+                      value={bpmText}
+                      onChange={(e) => setBpmText(e.target.value)}
+                      onBlur={commitBpm}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitBpm();
+                      }}
+                      aria-describedby="bpm-unit"
+                    />
+                    <span id="bpm-unit">BPM</span>
+                  </label>
                   <button type="button" className="btn" onClick={stopAll}>
                     ■ 停止
                   </button>
-                  <button type="button" className="btn btn-ghost" onClick={() => patch({ progression: [] })}>
+                  <button type="button" className="btn btn-ghost" onClick={() => withUndo(`已清空${names[section.id]}的 ${items.length} 個和弦`, { progression: [] })}>
                     清空此段
                   </button>
                 </div>
@@ -433,7 +520,12 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                         className="btn"
                         onClick={() => {
                           const last = items[items.length - 1];
-                          playChords([...(last ? [midisOfFrets(last.frets)] : []), midisOfFrets(s.frets)]);
+                          const beat = 60 / bpmOf(section);
+                          const lastDur = last ? beatsOf(last) * beat : 0;
+                          playTimedChords([
+                            ...(last ? [{ midis: midisOfFrets(last.frets), startSec: 0, durSec: lastDur }] : []),
+                            { midis: midisOfFrets(s.frets), startSec: lastDur, durSec: DEFAULT_BEATS * beat },
+                          ]);
                         }}
                       >
                         ▶ 接著聽
@@ -472,13 +564,30 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                   : '音名加八度，例如 A3、Bb3、F#4；最後一個音會用來挑選銜接和弦'}
             </p>
 
+            {timingBroken && (
+              <div className="notice warn-notice" role="status">
+                <p>
+                  旋律被改過，和錄音時記下的節奏對不上，所以暫時不能拿來「配和弦」。錄音的版本還保留著。
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() =>
+                    withUndo('已還原成錄音時的旋律', { melody: notesToMelodyText(section.melodyTimed ?? [], speller) })
+                  }
+                >
+                  還原成錄音的旋律
+                </button>
+              </div>
+            )}
+
             <HumRecorder
               keyInfo={key}
               speller={speller}
               hasMelody={section.melody.trim().length > 0}
               hasTiming={!!timed}
               onAppend={(t, added) => patch(mergeMelody(section, added, t, 'append'))}
-              onReplace={(t, added) => patch(mergeMelody(section, added, t, 'replace'))}
+              onReplace={(t, added) => withUndo('已用新錄的旋律取代原本的旋律', mergeMelody(section, added, t, 'replace'))}
             />
 
             {refView && (
@@ -528,13 +637,29 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             keyLock={locked}
             hasChords={items.length > 0}
             onLockKey={(k) => patch({ keyLock: k })}
-            onAdopt={(voicings, mode) => {
-              const added = voicings.map((f) => ({ id: newId('c'), frets: [...f] }));
-              patch({ progression: mode === 'replace' ? added : [...items, ...added] });
+            onAdopt={(adopted, mode, harmonizeBpm) => {
+              const added = adopted.map((a) => ({ id: newId('c'), frets: [...a.frets], beats: a.beats }));
+              // 段落原本是空的才沿用配和弦時的速度，免得改掉使用者已經設好的速度
+              const bpmPatch = items.length === 0 ? { bpm: harmonizeBpm } : {};
+              if (mode === 'replace' && items.length > 0) {
+                withUndo(`已用 ${added.length} 個新和弦取代原本的 ${items.length} 個`, { progression: added, bpm: harmonizeBpm });
+              } else patch({ progression: [...items, ...added], ...bpmPatch });
             }}
           />
         </div>
       </main>
+
+      {undo && (
+        <UndoToast
+          message={undo.message}
+          onUndo={() => {
+            const restored = { ...undo.before, updatedAt: Date.now() };
+            setUndo(null);
+            store.updateActive(() => restored);
+          }}
+          onClose={() => setUndo(null)}
+        />
+      )}
     </div>
   );
 }

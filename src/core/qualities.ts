@@ -45,6 +45,14 @@ export const QUALITY_LIST: QualityDef[] = [
   q('m9', 'm9', [0, 2, 3, 7, 10], 'minor', 0.06, [7]),
   q('7b9', '7b9', [0, 1, 4, 7, 10], 'dominant', 0.03, [7]),
   q('7#9', '7#9', [0, 3, 4, 7, 10], 'dominant', 0.03, [7]),
+  // 色彩和弦（Neo-Soul／爵士常用）。延伸和弦常省略五音或九音，所以列為可省略
+  q('6/9', '6/9', [0, 2, 4, 7, 9], 'major', 0.04, [7]),
+  q('maj7#11', 'maj7#11', [0, 4, 6, 7, 11], 'major', 0.03, [7]),
+  q('m11', 'm11', [0, 2, 3, 5, 7, 10], 'minor', 0.05, [7, 2]),
+  q('13', '13', [0, 2, 4, 7, 9, 10], 'dominant', 0.04, [7, 2]),
+  q('9sus4', '9sus4', [0, 2, 5, 7, 10], 'dominant', 0.03, [7]),
+  q('7sus2', '7sus2', [0, 2, 7, 10], 'dominant', 0.02, [7]),
+  q('7#5', '7#5', [0, 4, 8, 10], 'dominant', 0.03),
 ];
 
 export const QUALITIES: Record<string, QualityDef> = Object.fromEntries(

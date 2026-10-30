@@ -1,4 +1,5 @@
 import type { PitchFrame } from '../core';
+import { setAudioSession } from './context';
 import type { PitchMessage } from './pitch.worklet';
 import workletUrl from './pitch.worklet.ts?worker&url';
 
@@ -72,6 +73,8 @@ export class PitchTracker {
       this.node = node;
 
       if (source === 'mic') {
+        // iPhone：錄音時切成「播放並錄音」，結束後在 release() 切回「播放媒體」
+        setAudioSession('play-and-record');
         // 關掉瀏覽器的人聲處理：回音消除／降噪／自動增益都會改變音高與音量，造成誤判
         this.stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
@@ -108,6 +111,7 @@ export class PitchTracker {
 
   private release(): void {
     window.clearTimeout(this.stopTimer);
+    if (this.stream) setAudioSession('playback');
     this.stream?.getTracks().forEach((t) => t.stop());
     this.node?.port.close();
     this.node?.disconnect();

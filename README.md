@@ -2,15 +2,21 @@
 
 給「有指板直覺、不熟樂理」的創作者：輸入指法 → 辨識和弦與調性 → 看懂聲部動向 → 取得下一步建議。
 
-**線上版：https://guitar.chordy.site/**（Cloudflare，HTTPS，手機可用麥克風；資料存在各自的瀏覽器裡，不會上傳）
+**線上版：https://guitar.chordy.site/**（Cloudflare，HTTPS，手機可用麥克風）
+
+隱私：靈感內容只存在各自的瀏覽器裡，不會上傳。網站本身不載入任何第三方資源（字型自架），
+但 Cloudflare 的 Web Analytics 若在後台開著，會在頁面插入它的流量統計腳本（只記瀏覽紀錄，看不到靈感內容）；
+不想要的話到 Cloudflare 後台關掉，並把 `public/_headers` 的 CSP 裡 cloudflareinsights 兩處移除。
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 單元測試
+npm test         # 單元、service worker 與畫面測試（Vitest；畫面測試用 jsdom）
 npm run build    # 型別檢查 + 打包到 dist/
 npm run preview  # 預覽正式版（可測離線快取）
 ```
+
+推到 GitHub 會跑 CI（`.github/workflows/ci.yml`：測試 + 型別檢查 + 建置），不會部署。
 
 ## 部署
 
@@ -18,12 +24,13 @@ npm run preview  # 預覽正式版（可測離線快取）
 
 ```bash
 npx wrangler@4 login   # 第一次，或換主機時：在瀏覽器登入並授權
-npm run deploy         # 建置（含型別檢查）→ 上傳 dist/ → 綁定 wrangler.toml 裡的自訂網域
+npm run deploy         # 測試 → 建置（含型別檢查）→ 上傳 dist/ → 綁定 wrangler.toml 裡的自訂網域
 ```
 
 - 設定在 `wrangler.toml`：把 `dist/` 當純靜態資源發佈，不需要後端；`custom_domain = true` 會自動建立 DNS 紀錄與 HTTPS 憑證，
   前提是網域在同一個 Cloudflare 帳號，且該名稱還沒有其他 DNS 紀錄。
-- `public/_headers` 控制快取：`sw.js`、`precache.json` 與 HTML 入口每次都向伺服器確認，檔名帶雜湊的檔案與吉他取樣長期快取。
+- `public/_headers` 控制快取與安全標頭：`sw.js`、`precache.json` 與 HTML 入口每次都向伺服器確認，
+  檔名帶雜湊的檔案與吉他取樣長期快取；另有 CSP、禁止被嵌入框架、只允許本站使用麥克風。
 - 授權範圍很廣（wrangler 的預設）；不再使用的主機上可執行 `npx wrangler@4 logout`，
   或到 Cloudflare 後台 Profile → Access → Authorized Applications 撤銷。
 
@@ -51,8 +58,12 @@ npm run deploy         # 建置（含型別檢查）→ 上傳 dist/ → 綁定 
 ```
 Idea { id, title, createdAt, updatedAt, sections[] }
   Section { id, label: intro|verse|prechorus|chorus|bridge|outro,
-            progression: [{ id, frets[6] }], keyLock | null, melody: "A3 B3 …" }
+            progression: [{ id, frets[6], beats? }], keyLock | null, melody: "A3 B3 …",
+            melodyTimed?: [{ midi, startSec, durSec }], bpm? }
 ```
+
+`beats` 預設 4、`bpm` 預設 90；兩者都是選填，舊資料與舊備份不用轉換。
+同一個瀏覽器開多個分頁時用 BroadcastChannel 互相通知存檔與刪除，較新的版本勝出。
 
 只存原始輸入；和弦名稱、調性、級數、聲部動向都由引擎即時重算。
 儲存：IndexedDB（`guitar-idea-pad` / `ideas`，一個靈感一筆），編輯後 400ms 自動寫入，離開頁面時立刻送出。
@@ -75,7 +86,8 @@ Idea { id, title, createdAt, updatedAt, sections[] }
   偵測用 AudioWorklet + pitchy（McLeod），關閉瀏覽器的回音消除／降噪／自動增益
 - 旋律配和弦：哼唱時一併記下每個音的時間（`Section.melodyTimed`），依速度與拍號切成小節，
   從旋律推論調性（Krumhansl-Kessler 輪廓），每小節以「旋律音契合度 + 和聲走向」做動態規劃挑和弦，並附替代候選、吉他指法與「旋律＋和弦」同步試聽；
-  手動改過旋律文字後節奏資料會失效（只比音高），此時需重新哼唱
+  手動改過旋律文字後節奏資料會暫時對不上（只比音高），介面會提示並可一鍵還原成錄音的版本；
+  採用的和弦會帶入拍數（相鄰相同的合併）與速度
 - 取樣吉他音色與離線：和弦試聽用 smplr 播放 FluidR3_GM 的鋼弦／尼龍弦吉他取樣（檔案放在 `public/samples`，與網站同源，
   授權見 `public/samples/ATTRIBUTION.md`，CC BY 3.0，介面已附標示）；取樣尚未載入或載入失敗時自動退回合成音色。
   正式版（`npm run build` + `npm run preview`）會註冊 service worker（`public/sw.js`）：建置時產生 `precache.json`，
@@ -87,7 +99,9 @@ Idea { id, title, createdAt, updatedAt, sections[] }
 
 - 哼唱採譜在真人聲＋真麥克風上的準確度（目前只用合成訊號與假麥克風串流驗證過整條處理鏈，
   請到 `/pitch-lab.html` 用自己的聲音實測，必要時調整 `DEFAULT_SEGMENT_OPTIONS`）
-- 節奏／拍點量化（目前只記錄音高與秒數，旋律欄位只存音名）
 - 匯出 MIDI / PDF
-- 旋律試聽目前仍是簡單合成音（刻意與吉他和弦區隔）；手機上的取樣解碼時間與記憶體用量尚未實測
+- 旋律試聽目前仍是簡單合成音（刻意與吉他和弦區隔）
+- 實機驗證：iPhone 靜音模式下的聲音（已用 Audio Session API 處理）、手機上的取樣解碼時間
+  （已改為只解碼吉他音域內 17 個取樣，約 19 MB，原本 88 個約 100 MB）
+- LICENSE（尚未決定授權方式）
 - 變調夾、非標準調弦的 UI（資料結構已支援 `capo` 與 `tuning`）

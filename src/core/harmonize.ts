@@ -342,6 +342,20 @@ export function harmonize(
   return { windows: [...windows], choices };
 }
 
+/**
+ * 把每個窗的指法轉成和弦進行：相鄰且指法相同的合併成一個（拍數相加），
+ * 例如兩小節都是 C 就變成一個 8 拍的 C，播放時不會每小節重刷一次。
+ */
+export function toProgressionItems(voicings: readonly Fret[][], beatsPerWindow: number): { frets: Fret[]; beats: number }[] {
+  const out: { frets: Fret[]; beats: number }[] = [];
+  for (const f of voicings) {
+    const prev = out[out.length - 1];
+    if (prev && prev.frets.every((x, i) => x === f[i])) prev.beats += beatsPerWindow;
+    else out.push({ frets: [...f], beats: beatsPerWindow });
+  }
+  return out;
+}
+
 /** 為一串和弦配上吉他指法，前後和弦的聲部移動盡量小；第一個和弦選在中段把位。 */
 export function voiceChords(chords: readonly ChordRef[]): Fret[][] {
   const out: Fret[][] = [];

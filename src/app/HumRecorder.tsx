@@ -15,6 +15,9 @@ import {
 } from '../core';
 
 const MAX_SECONDS = 30;
+/** 低於這個音量（RMS）偵測器幾乎抓不到音高；高於這個值接近破音 */
+const QUIET_RMS = 0.01;
+const LOUD_RMS = 0.35;
 
 interface Props {
   /** 目前段落的調（用來吸附到調內音與決定升降記號拼寫） */
@@ -38,7 +41,8 @@ type Phase = 'idle' | 'recording' | 'review';
 
 export function HumRecorder({ keyInfo, speller, hasMelody, hasTiming, onAppend, onReplace }: Props) {
   const trackerRef = useRef<PitchTracker | null>(null);
-  const liveRef = useRef<{ hz: number; clarity: number }>({ hz: 0, clarity: 0 });
+  const liveRef = useRef<{ hz: number; clarity: number; rms: number }>({ hz: 0, clarity: 0, rms: 0 });
+  const [level, setLevel] = useState(0);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState('');
   const [frames, setFrames] = useState<PitchFrame[]>([]);
@@ -56,7 +60,8 @@ export function HumRecorder({ keyInfo, speller, hasMelody, hasTiming, onAppend, 
   useEffect(() => {
     if (phase !== 'recording') return;
     const id = window.setInterval(() => {
-      const { hz, clarity } = liveRef.current;
+      const { hz, clarity, rms } = liveRef.current;
+      setLevel(rms);
       setLiveNote(hz > 0 && clarity >= 0.9 ? midiName(Math.round(hzToMidiFloat(hz)), speller) : '');
       const tr = trackerRef.current;
       const last = tr?.frames[tr.frames.length - 1];
@@ -91,7 +96,7 @@ export function HumRecorder({ keyInfo, speller, hasMelody, hasTiming, onAppend, 
     setPlaying(false);
     const tr = new PitchTracker();
     tr.onFrame = (f) => {
-      liveRef.current = { hz: f.hz, clarity: f.clarity };
+      liveRef.current = { hz: f.hz, clarity: f.clarity, rms: f.rms };
     };
     try {
       await tr.start('mic');
@@ -134,6 +139,14 @@ export function HumRecorder({ keyInfo, speller, hasMelody, hasTiming, onAppend, 
         <div className="hum-rec" role="status">
           <button type="button" className="btn btn-primary" onClick={finish}>■ 停止（{seconds} 秒）</button>
           <span className="hum-live" aria-label="目前偵測到的音">{liveNote || '…'}</span>
+          <div className="hum-level">
+            <div className="level-bar" role="meter" aria-label="麥克風音量" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(1, level * 4) * 100)}>
+              <div className={`level-fill ${level > LOUD_RMS ? 'hot' : ''}`} style={{ width: `${Math.min(1, level * 4) * 100}%` }} />
+            </div>
+            <span className="level-hint">
+              {level < QUIET_RMS ? '聲音很小：靠近麥克風一點' : level > LOUD_RMS ? '太大聲可能爆音：離遠一點' : '音量剛好'}
+            </span>
+          </div>
         </div>
       )}
 

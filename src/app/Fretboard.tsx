@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import type { Fret } from '../core';
+import { useEffect, useRef, useState } from 'react';
+import { MAX_FRET, type Fret } from '../core';
 
 const ROWS = 5;
+const MAX_START = MAX_FRET - ROWS + 1;
 const STRING_LABELS = ['六弦', '五弦', '四弦', '三弦', '二弦', '一弦'];
 const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
@@ -13,19 +14,26 @@ interface Props {
 /** 直式和弦圖：六條弦由左到右＝六弦到一弦（與文字輸入順序一致）。 */
 export function Fretboard({ frets, onChange }: Props) {
   const [start, setStart] = useState(1);
+  // 這次的指法變化是不是使用者直接在指板上點出來的：是的話不要移動視窗（他正看著這一段）
+  const fromBoard = useRef(false);
 
-  // 指法改變時，讓視窗涵蓋所有按住的品位
+  // 指法從外部改變時（打字、點和弦卡片、採用建議），讓視窗涵蓋按住的品位
   useEffect(() => {
+    if (fromBoard.current) {
+      fromBoard.current = false;
+      return;
+    }
     const pressed = frets.filter((f): f is number => f !== null && f > 0);
     if (pressed.length === 0) return;
     const lo = Math.min(...pressed);
     const hi = Math.max(...pressed);
-    setStart((s) => (lo < s || hi >= s + ROWS ? Math.max(1, Math.min(lo, 20 - ROWS + 1)) : s));
+    setStart((s) => (lo < s || hi >= s + ROWS ? Math.max(1, Math.min(lo, MAX_START)) : s));
   }, [frets]);
 
   const set = (s: number, value: Fret) => {
     const next = [...frets];
     next[s] = value;
+    fromBoard.current = true;
     onChange(next);
   };
 
@@ -79,7 +87,7 @@ export function Fretboard({ frets, onChange }: Props) {
           ‹ 低把位
         </button>
         <span className="fb-range">第 {start}–{start + ROWS - 1} 品</span>
-        <button type="button" className="btn btn-ghost" onClick={() => setStart((s) => Math.min(20, s + 1))} disabled={start >= 20} aria-label="指板往高把位移動">
+        <button type="button" className="btn btn-ghost" onClick={() => setStart((s) => Math.min(MAX_START, s + 1))} disabled={start >= MAX_START} aria-label="指板往高把位移動">
           高把位 ›
         </button>
       </div>
