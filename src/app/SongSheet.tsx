@@ -6,6 +6,8 @@ import {
   formatFrets,
   layoutBars,
   linkedSections,
+  patternOf,
+  STRUM_PATTERNS,
   spellerForKey,
   suggestFingering,
   type Fret,
@@ -128,7 +130,9 @@ export function SongSheet({ idea, names, onEdit }: Props) {
           <section key={s.id} className={`sheet-sec sec-${s.label}`}>
             <h3 className="sheet-sec-title">
               {name}
-              <span className="sheet-sec-meta">{bars.length} 小節{keyNote}{bpmNote}</span>
+              <span className="sheet-sec-meta">
+                {bars.length} 小節{keyNote}{bpmNote} · {STRUM_PATTERNS.find((x) => x.id === patternOf(s))?.name}
+              </span>
             </h3>
             {repeatOf ? (
               <p className="sheet-repeat">同{names[repeatOf.id]}</p>

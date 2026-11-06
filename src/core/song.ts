@@ -37,6 +37,18 @@ export const DEFAULT_BEATS = 4;
 export const BPM_RANGE: [number, number] = [40, 240];
 export const BEAT_CHOICES = [1, 2, 3, 4, 6, 8];
 
+/** 伴奏的彈法（節奏型）。 */
+export type StrumPattern = 'beat' | 'whole' | 'folk' | 'palm' | 'arpeggio';
+export const STRUM_PATTERNS: { id: StrumPattern; name: string; hint: string }[] = [
+  { id: 'beat', name: '每拍刷一下', hint: '穩、直接，練換和弦' },
+  { id: 'whole', name: '一小節刷一下', hint: '讓和弦響著，空、開闊' },
+  { id: 'folk', name: '民謠刷法', hint: '下、下上、上下上' },
+  { id: 'palm', name: '八分音符悶音', hint: '電吉他的推進感' },
+  { id: 'arpeggio', name: '分解和弦', hint: '先彈低音再往上撥' },
+];
+const PATTERN_IDS = new Set<string>(STRUM_PATTERNS.map((p) => p.id));
+export const patternOf = (s: Pick<Section, 'pattern'>): StrumPattern => s.pattern ?? 'beat';
+
 export const beatsOf = (p: Pick<ProgressionItem, 'beats'>): number => p.beats ?? DEFAULT_BEATS;
 export const bpmOf = (s: Pick<Section, 'bpm'>): number => s.bpm ?? DEFAULT_BPM;
 
@@ -88,10 +100,12 @@ export interface Section {
    * 改其中一個，和弦、旋律、速度、調性與段落類型會一起改。
    */
   link?: string;
+  /** 伴奏彈法；未設定時是每拍刷一下 */
+  pattern?: StrumPattern;
 }
 
 /** 連動段落之間共用的內容。 */
-const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm'] as const;
+const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern'] as const;
 
 /** 旋律文字與時間資料音高完全對得上才回傳；否則代表旋律被手動改過，時間資料不可信。 */
 export function timedMelodyOf(section: Pick<Section, 'melody' | 'melodyTimed'>): TimedNote[] | undefined {
@@ -372,6 +386,7 @@ function normalizeSection(x: unknown): Section | undefined {
   if (timed) section.melodyTimed = timed;
   if (validBpm(o.bpm)) section.bpm = Math.round(o.bpm);
   if (typeof o.link === 'string' && o.link) section.link = o.link;
+  if (typeof o.pattern === 'string' && PATTERN_IDS.has(o.pattern)) section.pattern = o.pattern as StrumPattern;
   return section;
 }
 

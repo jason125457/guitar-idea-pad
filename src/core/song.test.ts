@@ -8,6 +8,7 @@ import {
   duplicateIdea,
   duplicateSection,
   layoutBars,
+  patternOf,
   linkedSections,
   moveSectionTo,
   songLength,
@@ -217,5 +218,19 @@ describe('layoutBars', () => {
       ['c0+4'],
       ['c0+2~'],
     ]);
+  });
+});
+
+describe('strum pattern', () => {
+  it('defaults to one strum per beat, follows linked sections and survives saving', () => {
+    let idea = addSection(createIdea(), 'chorus').idea;
+    const chorus = idea.sections[1]!;
+    expect(patternOf(chorus)).toBe('beat');
+    const r = duplicateSection(idea, chorus.id, true)!;
+    idea = updateSection(r.idea, chorus.id, { pattern: 'folk' });
+    expect(idea.sections.find((s) => s.id === r.section.id)!.pattern).toBe('folk');
+    const loaded = normalizeIdea(JSON.parse(JSON.stringify({ ...idea, sections: [...idea.sections, { ...chorus, id: 'x', pattern: 'bogus' }] })))!;
+    expect(loaded.sections[1]!.pattern).toBe('folk');
+    expect(loaded.sections[3]!.pattern).toBeUndefined();
   });
 });

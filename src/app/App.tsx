@@ -12,6 +12,8 @@ import {
   unlinkSection,
   analyzeProgression,
   beatsOf,
+  patternOf,
+  STRUM_PATTERNS,
   bpmOf,
   analyzeSection,
   analyzeVoicing,
@@ -373,9 +375,16 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     if (clamped !== bpm) patch({ bpm: clamped });
   };
 
-  const planOf = (s: Idea['sections'][number]): PlanItem[] =>
-    s.progression.map((it) => ({ sectionId: s.id, itemId: it.id, midis: midisOfFrets(it.frets), beats: beatsOf(it), beatSec: 60 / bpmOf(s) }));
-  const playSection = () => playback.play(planOf(section), { loop, mode: 'section' });
+  const planOf = (s: Idea['sections'][number]): PlanItem[] => {
+    let at = 0;
+    return s.progression.map((it) => {
+      const sectionBeat = at;
+      at += beatsOf(it);
+      return { sectionId: s.id, itemId: it.id, midis: midisOfFrets(it.frets), beats: beatsOf(it), beatSec: 60 / bpmOf(s), pattern: patternOf(s), sectionBeat };
+    });
+  };
+  // 有選取和弦時從那個和弦開始播（像 DAW 的播放游標），沒選就從頭
+  const playSection = () => playback.play(planOf(section), { loop, mode: 'section', startAt: selIndex >= 0 ? selIndex : 0 });
   const playSong = () => playback.play(idea.sections.flatMap(planOf), { mode: 'song' });
   const songHasChords = idea.sections.some((s) => s.progression.length > 0);
 
@@ -524,7 +533,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               <button type="button" className="btn btn-primary tp-play" onClick={playback.stop}>■ 停止</button>
             ) : (
               <button type="button" className="btn btn-primary tp-play" disabled={!items.length} onClick={playSection}>
-                ▶ 播放{sectionName}
+                {selIndex > 0 ? `▶ 從第 ${selIndex + 1} 個播放` : `▶ 播放${sectionName}`}
               </button>
             )}
             <button type="button" className={`btn btn-sm ${loop ? 'is-active' : ''}`} aria-pressed={loop} onClick={() => setLoop((l) => !l)}>
@@ -547,6 +556,23 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                 aria-describedby="bpm-unit"
               />
               <span id="bpm-unit">BPM</span>
+            </label>
+            <label className="bpm">
+              <span>彈法</span>
+              <select
+                className="input input-sm tp-timbre"
+                value={patternOf(section)}
+                onChange={(e) => {
+                  patch({ pattern: e.target.value as (typeof STRUM_PATTERNS)[number]['id'] });
+                  // 播放中換彈法就先停下，按播放再聽新的彈法
+                  if (playback.mode === 'section') playback.stop();
+                }}
+                title={STRUM_PATTERNS.find((p) => p.id === patternOf(section))?.hint}
+              >
+                {STRUM_PATTERNS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}（{p.hint}）</option>
+                ))}
+              </select>
             </label>
             <label className="bpm">
               <span>音色</span>

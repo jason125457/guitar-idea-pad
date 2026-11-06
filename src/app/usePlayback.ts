@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getContext } from '../audio/context';
-import { onStopAll, playTimedChords, stopAll, strumBeats } from '../audio/pluck';
+import { onStopAll, playTimedChords, stopAll } from '../audio/pluck';
+import { patternEvents } from '../audio/rhythm';
+import type { StrumPattern } from '../core';
 
 /** 播放清單裡的一格：哪個段落的哪個和弦、幾拍、一拍幾秒。 */
 export interface PlanItem {
@@ -9,6 +11,10 @@ export interface PlanItem {
   midis: number[];
   beats: number;
   beatSec: number;
+  /** 這個段落的彈法 */
+  pattern: StrumPattern;
+  /** 這個和弦在段落裡從第幾拍開始（節奏型要對齊小節） */
+  sectionBeat: number;
 }
 
 /** 目前播到哪裡：哪個和弦的第幾拍（從 0 起算）。 */
@@ -55,12 +61,14 @@ export function usePlayback() {
   }, [halt]);
 
   const play = useCallback(
-    (plan: readonly PlanItem[], opts: { loop?: boolean; mode: 'section' | 'song' }) => {
-      const timed = schedule(plan);
-      if (!timed.length) return;
-      const run = () => {
+    (plan: readonly PlanItem[], opts: { loop?: boolean; mode: 'section' | 'song'; startAt?: number }) => {
+      const full = schedule(plan);
+      if (!full.length) return;
+      // 從第 startAt 個和弦開始播；循環時第二輪起從頭播整段
+      const first = schedule(plan.slice(Math.max(0, Math.min(opts.startAt ?? 0, plan.length - 1))));
+      const run = (timed: typeof full) => {
         const chords = timed.flatMap((p) =>
-          strumBeats([{ midis: p.midis, beats: p.beats }], p.beatSec).map((c) => ({ ...c, startSec: c.startSec + p.startSec })),
+          patternEvents(p.midis, p.beats, p.beatSec, p.pattern, p.sectionBeat).map((c) => ({ ...c, startSec: c.startSec + p.startSec })),
         );
         const total = playTimedChords(chords); // 會先 stopAll → halt，所以下面才設定新的狀態
         setMode(opts.mode);
@@ -70,7 +78,7 @@ export function usePlayback() {
         const tick = () => {
           const t = ctx.currentTime - t0;
           if (t >= total) {
-            if (opts.loop) return run();
+            if (opts.loop) return run(full);
             return halt();
           }
           const cur = [...timed].reverse().find((p) => p.startSec <= t) ?? timed[0]!;
@@ -84,7 +92,7 @@ export function usePlayback() {
         };
         raf.current = requestAnimationFrame(tick);
       };
-      run();
+      run(first);
     },
     [halt],
   );

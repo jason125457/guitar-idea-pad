@@ -61,6 +61,10 @@ export interface TimedChord {
   durSec: number;
   /** 這一下的力度倍率（預設 1），用來做重拍 */
   level?: number;
+  /** 刷的方向：down 從低音弦先響（預設），up 從高音弦先響 */
+  dir?: 'down' | 'up';
+  /** 放開後琴弦再響多久（秒，預設 0.5）；悶音用很短的值 */
+  ring?: number;
 }
 
 /**
@@ -86,30 +90,37 @@ export function scheduleChords(c: AudioContext, t0: number, chords: readonly Tim
   const player = activePlayer();
   if (player) {
     for (const ch of chords) {
-      [...ch.midis]
-        .sort((a, b) => a - b)
-        .forEach((m, ni) => {
-          // time 是 AudioContext 的絕對時間；多留 0.5 秒讓琴弦自然收尾
-          player.start({ note: m, time: t0 + ch.startSec + ni * STRUM_GAP_SEC, duration: ch.durSec + 0.5, velocity: strumVelocity(ni, level * (ch.level ?? 1)) });
+      const notes = [...ch.midis].sort((a, b) => a - b);
+      notes.forEach((m, ni) => {
+        // 往上刷時高音弦先響；力度仍依弦的位置（低音弦較重）
+        const order = ch.dir === 'up' ? notes.length - 1 - ni : ni;
+        // time 是 AudioContext 的絕對時間；多留一點讓琴弦自然收尾
+        player.start({
+          note: m,
+          time: t0 + ch.startSec + order * STRUM_GAP_SEC,
+          duration: ch.durSec + (ch.ring ?? 0.5),
+          velocity: strumVelocity(ni, level * (ch.level ?? 1)),
         });
+      });
     }
     return;
   }
   for (const ch of chords) {
-    [...ch.midis]
-      .sort((a, b) => a - b)
-      .forEach((m, ni) => {
-        const src = c.createBufferSource();
-        src.buffer = pluck(c, m);
-        const gain = c.createGain();
-        const start = t0 + ch.startSec + ni * 0.028;
-        gain.gain.setValueAtTime(level * (ch.level ?? 1), start);
-        gain.gain.setTargetAtTime(0, start + Math.max(0.2, ch.durSec - 0.15), 0.08);
-        src.connect(gain).connect(c.destination);
-        src.start(start);
-        src.stop(start + ch.durSec + 0.4);
-        active.push(src);
-      });
+    const notes = [...ch.midis].sort((a, b) => a - b);
+    const ring = ch.ring ?? 0.5;
+    notes.forEach((m, ni) => {
+      const order = ch.dir === 'up' ? notes.length - 1 - ni : ni;
+      const src = c.createBufferSource();
+      src.buffer = pluck(c, m);
+      const gain = c.createGain();
+      const start = t0 + ch.startSec + order * 0.028;
+      gain.gain.setValueAtTime(level * (ch.level ?? 1), start);
+      gain.gain.setTargetAtTime(0, start + Math.max(ring < 0.2 ? 0.04 : 0.2, ch.durSec - 0.15), ring < 0.2 ? 0.02 : 0.08);
+      src.connect(gain).connect(c.destination);
+      src.start(start);
+      src.stop(start + ch.durSec + Math.max(0.1, ring - 0.1));
+      active.push(src);
+    });
   }
 }
 
