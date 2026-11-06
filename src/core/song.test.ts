@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addSection,
+  addTake,
   analyzeSection,
   contrastCheck,
   contrastReference,
@@ -232,5 +233,17 @@ describe('strum pattern', () => {
     const loaded = normalizeIdea(JSON.parse(JSON.stringify({ ...idea, sections: [...idea.sections, { ...chorus, id: 'x', pattern: 'bogus' }] })))!;
     expect(loaded.sections[1]!.pattern).toBe('folk');
     expect(loaded.sections[3]!.pattern).toBeUndefined();
+  });
+});
+
+describe('melody takes', () => {
+  it('keeps the newest takes first, caps them, and survives saving', () => {
+    let s: { melodyTakes?: ReturnType<typeof addTake>['takes'] } = {};
+    for (let i = 0; i < 8; i++) s = { melodyTakes: addTake(s, [{ midi: 60 + i, beat: 0, beats: 1 }], i).takes };
+    expect(s.melodyTakes).toHaveLength(6);
+    expect(s.melodyTakes![0]!.notes[0]!.midi).toBe(67);
+    const idea = updateSection(createIdea(), createIdea().sections[0]!.id, {});
+    const withTakes = { ...idea, sections: [{ ...idea.sections[0]!, melodyTakes: s.melodyTakes }] };
+    expect(normalizeIdea(JSON.parse(JSON.stringify(withTakes)))!.sections[0]!.melodyTakes).toHaveLength(6);
   });
 });

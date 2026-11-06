@@ -146,3 +146,33 @@ export function chordsForMelody(
   }
   return ideas.filter((i) => i.fit !== 'clash').sort((a, b) => b.score - a.score).slice(0, limit);
 }
+
+/**
+ * 依旋律每小節配一個和弦（給「先唱、還沒有和弦」的小節用）：
+ * 每小節取最合的；沒唱的小節沿用前一個；第一小節沒唱時用主和弦。
+ */
+export function harmonizeBars(
+  notes: readonly BeatNote[],
+  fromBeat: number,
+  bars: number,
+  key: Pick<KeyGuess, 'tonic' | 'mode'>,
+  prev?: ChordRef,
+  beatsPerBar = 4,
+): ChordRef[] {
+  const tonic: ChordRef = diatonicChords(key)[0] as ChordRef;
+  const out: ChordRef[] = [];
+  let last = prev;
+  for (let b = 0; b < bars; b++) {
+    const start = fromBeat + b * beatsPerBar;
+    const inBar = melodyIn(notes, start, start + beatsPerBar);
+    // 不偏向前一個和弦：一整串都貼著同一個和弦會很悶。差不多合的話，優先換一個
+    const ideas = chordsForMelody(inBar, key, undefined, 4);
+    const same = (c: ChordRef) => !!last && c.rootPc === last.rootPc && c.qualityId === last.qualityId;
+    const top = ideas[0];
+    const moving = top && same(top.chord) ? ideas.find((i) => !same(i.chord) && top.score - i.score <= 0.1) : undefined;
+    const pick = (moving ?? top)?.chord ?? last ?? tonic;
+    out.push(pick);
+    last = pick;
+  }
+  return out;
+}

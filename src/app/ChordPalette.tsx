@@ -47,10 +47,23 @@ interface Props {
   onPasteText: (text: string) => void;
   onPlaySuggestion: (s: Suggestion) => void;
   onAddSuggestion: (s: Suggestion) => void;
-  onDraft: () => void;
   searchRef: RefObject<HTMLInputElement>;
+  /** 目前打開的分頁（由外面控制：貼上整段文字時要切到「打字／貼上」） */
+  tab: PaletteTab;
+  onTab: (t: PaletteTab) => void;
+  /** 「自己按」分頁的內容（指板） */
+  board: ReactNode;
+  /** 「打字／貼上」分頁下方的貼上面板 */
   children?: ReactNode;
 }
+
+export type PaletteTab = 'common' | 'next' | 'type' | 'board';
+const TABS: { id: PaletteTab; name: string }[] = [
+  { id: 'common', name: '常用' },
+  { id: 'next', name: '建議' },
+  { id: 'type', name: '打字／貼上' },
+  { id: 'board', name: '自己按' },
+];
 
 /**
  * 和弦盤（參考 Hookpad）：這個調常用的和弦、下一步建議、直接打和弦名稱，點了就加進時間軸。
@@ -96,9 +109,36 @@ export function ChordPalette(p: Props) {
     <section className="panel palette" aria-labelledby="h-palette">
       <div className="pal-head">
         <h2 id="h-palette">加和弦</h2>
-        <span className="help pal-where">{p.insertHint}</span>
+        <fieldset className="seg seg-sm" aria-label="指法風格">
+          {STYLES.map((s) => (
+            <label key={s.id} className={`seg-btn ${p.style === s.id ? 'is-on' : ''}`}>
+              <input className="sr-only" type="radio" name="voicing-style" value={s.id} checked={p.style === s.id} onChange={() => p.onStyle(s.id)} />
+              {s.name}
+            </label>
+          ))}
+        </fieldset>
+      </div>
+      <p className="help pal-where">{p.insertHint}</p>
+
+      <div className="ptabs" role="tablist" aria-label="加和弦的方式">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`ptab-${t.id}`}
+            aria-selected={p.tab === t.id}
+            aria-controls={`ppanel-${t.id}`}
+            className={`ptab ${p.tab === t.id ? 'is-on' : ''}`}
+            onClick={() => p.onTab(t.id)}
+          >
+            {t.name}
+            {t.id === 'next' && p.suggestions.length > 0 && <span className="ptab-count">{p.suggestions.length}</span>}
+          </button>
+        ))}
       </div>
 
+      <div role="tabpanel" id="ppanel-common" aria-labelledby="ptab-common" hidden={p.tab !== 'common'}>
       <div className="pal-group">
         <div className="pal-row">
           <h3 className="pal-title">
@@ -162,9 +202,13 @@ export function ChordPalette(p: Props) {
         </div>
       </div>
 
-      {p.suggestions.length > 0 && (
+      </div>
+
+      <div role="tabpanel" id="ppanel-next" aria-labelledby="ptab-next" hidden={p.tab !== 'next'}>
+      {p.suggestions.length === 0 ? (
+        <p className="help pal-empty">加了第一個和弦之後，這裡會推薦接下來可以接什麼。</p>
+      ) : (
         <div className="pal-group">
-          <h3 className="pal-title">下一步建議</h3>
           <ul className="pal-sugs">
             {p.suggestions.map((s) => (
               <li key={s.mood} className={`pal-sug mood-${s.mood}`}>
@@ -183,7 +227,9 @@ export function ChordPalette(p: Props) {
           </ul>
         </div>
       )}
+      </div>
 
+      <div role="tabpanel" id="ppanel-type" aria-labelledby="ptab-type" hidden={p.tab !== 'type'}>
       <div className="pal-group">
         <label className="pal-title field" htmlFor="chord-search">直接輸入和弦名稱</label>
         <form
@@ -224,21 +270,12 @@ export function ChordPalette(p: Props) {
         <p id="chord-search-help" className={h.err ? 'help err' : 'help'}>{h.text}</p>
       </div>
 
-      <div className="pal-group pal-foot">
-        <fieldset className="seg" aria-label="指法風格">
-          {STYLES.map((s) => (
-            <label key={s.id} className={`seg-btn ${p.style === s.id ? 'is-on' : ''}`}>
-              <input className="sr-only" type="radio" name="voicing-style" value={s.id} checked={p.style === s.id} onChange={() => p.onStyle(s.id)} />
-              {s.name}
-            </label>
-          ))}
-        </fieldset>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={p.onDraft}>
-          在指板上自己按
-        </button>
+      {p.children}
       </div>
 
-      {p.children}
+      <div role="tabpanel" id="ppanel-board" aria-labelledby="ptab-board" hidden={p.tab !== 'board'}>
+        {p.board}
+      </div>
     </section>
   );
 }

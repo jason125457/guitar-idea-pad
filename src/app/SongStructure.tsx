@@ -1,6 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { SECTION_LABELS, type SectionLabel } from '../core';
-import { ConfirmButton } from './ConfirmButton';
 
 export interface StructureBlock {
   id: string;
@@ -20,10 +19,6 @@ interface Props {
   onSelect: (id: string) => void;
   onMoveTo: (id: string, index: number) => void;
   onAdd: (label: SectionLabel) => void;
-  onRelabel: (label: SectionLabel) => void;
-  onRepeat: (linked: boolean) => void;
-  onUnlink: () => void;
-  onDelete: () => void;
 }
 
 const fmtBars = (b: number) => (Number.isInteger(b) ? `${b}` : b.toFixed(1));
@@ -65,7 +60,7 @@ export function SongStructure(p: Props) {
     <section className="panel structure" aria-labelledby="h-structure">
       <div className="st-head">
         <h2 id="h-structure">歌曲結構</h2>
-        <span className="help st-hint">寬度＝小節數 · 拖曳可以調整順序</span>
+        <span className="help st-hint">拖曳可以調整順序</span>
       </div>
 
       <div className="st-strip" role="tablist" aria-label="歌曲段落" onKeyDown={onKey}>
@@ -140,47 +135,6 @@ export function SongStructure(p: Props) {
         </details>
       </div>
 
-      {active && (
-        <div className="st-tools">
-          <label className="sec-type">
-            <span className="sr-only">段落類型</span>
-            <select
-              className="input input-sm"
-              value={active.label}
-              onChange={(e) => p.onRelabel(e.target.value as SectionLabel)}
-              aria-label={`${active.name}的段落類型`}
-            >
-              {SECTION_LABELS.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-          </label>
-          <button type="button" className="btn btn-sm btn-ghost" disabled={index <= 0} onClick={() => p.onMoveTo(active.id, index - 1)} aria-label="段落往前移">
-            ← 前移
-          </button>
-          <button type="button" className="btn btn-sm btn-ghost" disabled={index >= p.blocks.length - 1} onClick={() => p.onMoveTo(active.id, index + 1)} aria-label="段落往後移">
-            後移 →
-          </button>
-          <button type="button" className="btn btn-sm" onClick={() => p.onRepeat(true)}>
-            重複這段（連動）
-          </button>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => p.onRepeat(false)}>
-            複製成獨立段落
-          </button>
-          {active.linkedWith.length > 0 && (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={p.onUnlink}>
-              取消連動
-            </button>
-          )}
-          <ConfirmButton
-            label="刪除段落"
-            confirmLabel="確定刪除？"
-            ariaLabel={`刪除${active.name}`}
-            onConfirm={p.onDelete}
-            className={`btn btn-sm btn-ghost ${p.blocks.length <= 1 ? 'hidden' : ''}`}
-          />
-        </div>
-      )}
     </section>
   );
 }

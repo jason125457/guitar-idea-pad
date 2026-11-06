@@ -1,10 +1,12 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { playChords, playTimedChords } from '../audio/pluck';
-import { TIMBRES, getSoundState, setTimbre, subscribe, type Timbre } from '../audio/sound';
 import {
   BPM_RANGE,
   DEFAULT_BEATS,
   addSection,
+  addTake,
+  harmonizeBars,
+  inferKeyFromMelody,
   checkChordAgainstMelody,
   chordsForMelody,
   melodyIn,
@@ -59,7 +61,8 @@ import { useIdeaStore, type SaveState } from '../store/useIdeaStore';
 import { BackupPanel } from './BackupPanel';
 import { ChordImportPanel } from './ChordImportPanel';
 import { ChordInspector } from './ChordInspector';
-import { ChordPalette } from './ChordPalette';
+import { ChordPalette, type PaletteTab } from './ChordPalette';
+import { SectionMenu } from './SectionMenu';
 import { HarmonizePanel } from './HarmonizePanel';
 import { HumRecorder } from './HumRecorder';
 import { SongSidebar, formatDuration } from './SongSidebar';
@@ -174,10 +177,15 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const [notice, setNotice] = useState('');
   const [navOpen, setNavOpen] = useState(false);
   const [withMelody, setWithMelody] = useState(true);
+  /** 右邊工具欄：唱旋律打開時優先；否則選了和弦就看和弦，沒選就是加和弦 */
+  const [singOpen, setSingOpen] = useState(false);
+  const [palTab, setPalTab] = useState<PaletteTab>('common');
+  const [singBars, setSingBars] = useState(4);
+  /** 播放鍵要播哪裡 */
+  const [scope, setScope] = useState<'section' | 'song'>('section');
   const [pasteSeed, setPasteSeed] = useState<{ text: string; n: number } | undefined>();
   const searchRef = useRef<HTMLInputElement>(null);
   const playback = usePlayback();
-  const sound = useSyncExternalStore(subscribe, getSoundState);
 
   const section = idea.sections.find((s) => s.id === sectionId) ?? (idea.sections[0] as Idea['sections'][number]);
   const names = sectionNames(idea);
@@ -446,13 +454,17 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const starts = items.reduce<number[]>((acc, _it, i) => [...acc, i === 0 ? 0 : (acc[i - 1] as number) + beatsOf(items[i - 1] as ProgressionItem)], []);
   const melodyAt = (i: number) => melodyIn(grid, starts[i] ?? 0, (starts[i] ?? 0) + beatsOf(items[i] as ProgressionItem));
   const names2 = (ms: readonly number[]) => ms.map((m) => midiName(m, speller)).join('、');
-  const saveMelody = (g: BeatNote[]) => {
+  const gridPatch = (g: BeatNote[]) => {
     const beatSec = 60 / bpm;
-    withUndo(`已錄好${sectionName}的旋律（${g.length} 個音）`, {
+    return {
       melodyGrid: g,
       melody: notesToMelodyText(g, speller),
       melodyTimed: g.map((n) => ({ midi: n.midi, startSec: n.beat * beatSec, durSec: n.beats * beatSec })),
-    });
+    };
+  };
+  const saveMelody = (g: BeatNote[]) => {
+    const { takes: next } = addTake(section, g);
+    withUndo(`已錄好${sectionName}的旋律（${g.length} 個音）`, { ...gridPatch(g), melodyTakes: next });
   };
   /** 選中和弦的旋律分析：唱了什麼、合不合、還能配什麼 */
   const selMelody = (() => {
@@ -500,6 +512,66 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const timingBroken = !!section.melodyTimed?.length && !timed;
   const showContrastHint = !ref && (section.label === 'verse' || section.label === 'prechorus');
 
+  // ── 右邊工具欄、旋律的幾次錄音、只有旋律還沒配和弦的小節 ──
+  const panelMode: 'sing' | 'chord' | 'add' = singOpen ? 'sing' : selected ? 'chord' : 'add';
+  const openAdd = (tab: PaletteTab = 'common') => {
+    setSingOpen(false);
+    setSelId(null);
+    setPalTab(tab);
+  };
+  const takes = section.melodyTakes ?? [];
+  const takeTime = (t: number) => new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const takeInfos =
+    takes.length > 0
+      ? takes.map((t, i) => ({
+          id: t.id,
+          label: `第 ${takes.length - i} 次 · ${takeTime(t.at)}`,
+          count: t.notes.length,
+          current: JSON.stringify(t.notes) === JSON.stringify(grid),
+        }))
+      : grid.length
+        ? [{ id: 'current', label: '目前的旋律', count: grid.length, current: true }]
+        : [];
+  const melodyEnd = grid.reduce((e, n) => Math.max(e, n.beat + n.beats), 0);
+  const ghostBars = Math.max(0, Math.ceil((melodyEnd - totalBeats) / 4 - 1e-9));
+  /** 還沒有和弦時錄音用的「無聲小節」 */
+  const silentPlan = (n: number): PlanItem[] =>
+    Array.from({ length: n }, (_, i) => ({ sectionId: section.id, itemId: `bar-${i}`, midis: [], beats: 4, beatSec: 60 / bpm, pattern: 'beat', sectionBeat: i * 4 }));
+  const recordPlan = () => (items.length ? planOf(section) : silentPlan(singBars));
+  const hearTake = (id: string) => {
+    const t = takes.find((x) => x.id === id);
+    const notes = t?.notes ?? grid;
+    const beatSec = 60 / bpm;
+    const n = Math.max(1, Math.ceil(notes.reduce((e, x) => Math.max(e, x.beat + x.beats), 0) / 4));
+    playback.play(items.length ? planOf(section) : silentPlan(n), {
+      mode: 'section',
+      melody: notes.map((x) => ({ midi: x.midi, startSec: x.beat * beatSec, durSec: x.beats * beatSec })),
+    });
+  };
+  /** 依旋律替還沒配和弦的小節配上和弦（每小節一個，四拍） */
+  const fillFromMelody = () => {
+    const k = key ?? inferKeyFromMelody(grid.map((n) => ({ midi: n.midi, durSec: n.beats })))[0] ?? { tonic: 0, mode: 'major' as const };
+    const refsForBars = harmonizeBars(grid, totalBeats, ghostBars, k, analyzed[items.length - 1]?.best);
+    let prev = items[items.length - 1]?.frets;
+    const added: ProgressionItem[] = [];
+    for (const ch of refsForBars) {
+      const f = voiceFor(ch, prev, added.map((a) => a.frets));
+      if (!f) continue;
+      added.push({ id: newId('c'), frets: f, beats: 4 });
+      prev = f;
+    }
+    if (!added.length) return;
+    withUndo(`已依旋律配上 ${added.length} 小節的和弦`, { progression: [...items, ...added] });
+    setSingOpen(false);
+    setSelId(added[0]?.id ?? null);
+  };
+  const playNow = () => (scope === 'song' ? playSong() : playSection());
+  const canPlay = scope === 'song' ? songHasChords : items.length > 0;
+  const moveSectionBy = (dir: -1 | 1) => {
+    const idx = idea.sections.findIndex((x) => x.id === section.id);
+    store.updateActive((i) => moveSectionTo(i, section.id, idx + dir));
+  };
+
   return (
     <div className="shell">
       <SongSidebar
@@ -517,7 +589,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
       </SongSidebar>
 
       <div className="app">
-      <header className="song-head">
+      <header className="topbar">
         <button type="button" className="btn btn-sm btn-ghost nav-btn" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
           ☰ 我的歌
         </button>
@@ -535,31 +607,60 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             autoComplete="off"
           />
           <p className="song-meta">
-            {idea.sections.length} 個段落
-            {songLen.beats > 0 && ` · ${Math.round(songLen.beats / 4)} 小節 · 約 ${formatDuration(songLen.seconds)}`}
+            {songLen.beats > 0 ? `${idea.sections.length} 段 · ${Math.round(songLen.beats / 4)} 小節 · 約 ${formatDuration(songLen.seconds)}` : `${idea.sections.length} 段`}
             <span className="save" role="status">{saveText(saveState, persistent)}</span>
           </p>
         </div>
-        {playback.mode === 'song' ? (
-          <button type="button" className="btn btn-primary" onClick={playback.stop}>■ 停止</button>
-        ) : (
-          <button type="button" className="btn btn-primary" disabled={!songHasChords} onClick={playSong}>▶ 整首播放</button>
-        )}
-      </header>
 
-      <div className="view-switch seg no-print" role="group" aria-label="檢視">
-        <button type="button" className={`seg-btn ${view === 'edit' ? 'is-on' : ''}`} aria-pressed={view === 'edit'} onClick={() => setView('edit')}>
-          編曲
-        </button>
-        <button type="button" className={`seg-btn ${view === 'sheet' ? 'is-on' : ''}`} aria-pressed={view === 'sheet'} onClick={() => setView('sheet')}>
-          譜（和弦＋指法）
-        </button>
-      </div>
+        <div className="transport" role="group" aria-label="播放">
+          {playback.mode ? (
+            <button type="button" className="btn btn-primary tp-play" onClick={playback.stop}>■ 停止</button>
+          ) : (
+            <button type="button" className="btn btn-primary tp-play" disabled={!canPlay} onClick={playNow}>
+              ▶ {scope === 'song' ? '播放整首' : selIndex > 0 ? `從第 ${selIndex + 1} 個播放` : `播放${sectionName}`}
+            </button>
+          )}
+          <div className="seg seg-sm" role="group" aria-label="播放範圍">
+            <button type="button" className={`seg-btn ${scope === 'section' ? 'is-on' : ''}`} aria-pressed={scope === 'section'} onClick={() => setScope('section')}>這段</button>
+            <button type="button" className={`seg-btn ${scope === 'song' ? 'is-on' : ''}`} aria-pressed={scope === 'song'} onClick={() => setScope('song')}>整首</button>
+          </div>
+          <button type="button" className={`btn btn-sm tp-loop ${loop ? 'is-active' : ''}`} aria-pressed={loop} onClick={() => setLoop((l) => !l)} title="循環播放這段">
+            ⟳<span className="sr-only">循環</span>
+          </button>
+          <label className="bpm">
+            <input
+              type="number"
+              inputMode="numeric"
+              className="input input-sm mono"
+              min={BPM_RANGE[0]}
+              max={BPM_RANGE[1]}
+              value={bpmText}
+              onChange={(e) => setBpmText(e.target.value)}
+              onBlur={commitBpm}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitBpm();
+              }}
+              aria-label={`${sectionName}的速度（BPM）`}
+            />
+            <span aria-hidden="true">BPM</span>
+          </label>
+        </div>
+
+        <div className="view-switch seg seg-sm no-print" role="group" aria-label="檢視">
+          <button type="button" className={`seg-btn ${view === 'edit' ? 'is-on' : ''}`} aria-pressed={view === 'edit'} onClick={() => setView('edit')}>
+            編曲
+          </button>
+          <button type="button" className={`seg-btn ${view === 'sheet' ? 'is-on' : ''}`} aria-pressed={view === 'sheet'} onClick={() => setView('sheet')}>
+            譜（和弦＋指法）
+          </button>
+        </div>
+      </header>
 
       {view === 'sheet' ? (
         <SongSheet idea={idea} names={names} onEdit={editFromSheet} />
       ) : (
-      <>
+      <div className="ws">
+      <div className="ws-main">
       <SongStructure
         blocks={blocks}
         activeId={section.id}
@@ -571,109 +672,61 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
           store.updateActive(() => r.idea);
           setSectionId(r.section.id);
         }}
-        onRelabel={(l) => patch({ label: l })}
-        onRepeat={(linked) => {
-          const r = duplicateSection(idea, section.id, linked);
-          if (!r) return;
-          store.updateActive(() => r.idea);
-          setSectionId(r.section.id);
-        }}
-        onUnlink={() => store.updateActive((i) => unlinkSection(i, section.id))}
-        onDelete={() => {
-          const idx = idea.sections.findIndex((s) => s.id === section.id);
-          const fallback = idea.sections[idx + 1] ?? idea.sections[idx - 1];
-          const before = idea;
-          const after = removeSection(idea, section.id);
-          store.updateActive(() => after);
-          setUndo({ message: `已刪除${sectionName}`, before, after });
-          if (fallback) setSectionId(fallback.id);
-        }}
       />
 
       <main id="section-panel" role="tabpanel" aria-labelledby={`tab-${section.id}`}>
         <section className="panel arrange" aria-labelledby="h-prog">
           <div className="arr-head">
-            <h2 id="h-prog">{sectionName}的和弦進行</h2>
-            {linkedNames.length > 0 && (
-              <span className="linked-note">和 {linkedNames.join('、')} 連動，改這裡會一起改</span>
-            )}
-            <span className="help arr-meta">
+            <h2 id="h-prog">{sectionName}</h2>
+            <span className="arr-meta">
               {items.length ? `${items.length} 個和弦 · ${Number.isInteger(bars) ? bars : bars.toFixed(1)} 小節` : '還沒有和弦'}
             </span>
-          </div>
-
-          <div className="transport" role="group" aria-label="播放控制">
-            {playback.mode === 'section' ? (
-              <button type="button" className="btn btn-primary tp-play" onClick={playback.stop}>■ 停止</button>
-            ) : (
-              <button type="button" className="btn btn-primary tp-play" disabled={!items.length} onClick={playSection}>
-                {selIndex > 0 ? `▶ 從第 ${selIndex + 1} 個播放` : `▶ 播放${sectionName}`}
-              </button>
-            )}
-            <button type="button" className={`btn btn-sm ${loop ? 'is-active' : ''}`} aria-pressed={loop} onClick={() => setLoop((l) => !l)}>
-              ⟳ 循環
-            </button>
-            <label className="bpm">
-              <span>速度</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                className="input input-sm mono"
-                min={BPM_RANGE[0]}
-                max={BPM_RANGE[1]}
-                value={bpmText}
-                onChange={(e) => setBpmText(e.target.value)}
-                onBlur={commitBpm}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitBpm();
-                }}
-                aria-describedby="bpm-unit"
-              />
-              <span id="bpm-unit">BPM</span>
-            </label>
-            <label className="bpm">
-              <span>彈法</span>
+            <label className="arr-pattern">
               <select
-                className="input input-sm tp-timbre"
+                className="input input-sm"
                 value={patternOf(section)}
                 onChange={(e) => {
                   patch({ pattern: e.target.value as (typeof STRUM_PATTERNS)[number]['id'] });
                   // 播放中換彈法就先停下，按播放再聽新的彈法
                   if (playback.mode === 'section') playback.stop();
                 }}
-                title={STRUM_PATTERNS.find((p) => p.id === patternOf(section))?.hint}
+                aria-label={`${sectionName}的彈法`}
+                title={STRUM_PATTERNS.find((x) => x.id === patternOf(section))?.hint}
               >
-                {STRUM_PATTERNS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}（{p.hint}）</option>
+                {STRUM_PATTERNS.map((x) => (
+                  <option key={x.id} value={x.id}>彈法：{x.name}</option>
                 ))}
               </select>
             </label>
-            <label className="bpm">
-              <span>音色</span>
-              <select className="input input-sm tp-timbre" value={sound.timbre} onChange={(e) => setTimbre(e.target.value as Timbre)}>
-                {TIMBRES.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </label>
+            <SectionMenu
+              name={sectionName}
+              label={section.label}
+              linked={linkedNames.length > 0}
+              canMove={{ left: idea.sections[0]?.id !== section.id, right: idea.sections[idea.sections.length - 1]?.id !== section.id }}
+              canDelete={idea.sections.length > 1}
+              hasChords={items.length > 0}
+              onRelabel={(l) => patch({ label: l })}
+              onMove={moveSectionBy}
+              onRepeat={(linked) => {
+                const r = duplicateSection(idea, section.id, linked);
+                if (!r) return;
+                store.updateActive(() => r.idea);
+                setSectionId(r.section.id);
+              }}
+              onUnlink={() => store.updateActive((i) => unlinkSection(i, section.id))}
+              onClear={() => withUndo(`已清空${sectionName}的 ${items.length} 個和弦`, { progression: [] })}
+              onDelete={() => {
+                const idx = idea.sections.findIndex((x) => x.id === section.id);
+                const fallback = idea.sections[idx + 1] ?? idea.sections[idx - 1];
+                const before = idea;
+                const after = removeSection(idea, section.id);
+                store.updateActive(() => after);
+                setUndo({ message: `已刪除${sectionName}`, before, after });
+                if (fallback) setSectionId(fallback.id);
+              }}
+            />
           </div>
-
-          <SingAlong
-            key={section.id}
-            ready={items.length > 0}
-            sectionName={sectionName}
-            beatSec={60 / bpm}
-            totalBeats={totalBeats}
-            keyInfo={key}
-            speller={speller}
-            hasMelody={grid.length > 0}
-            start={(o) => playback.play(planOf(section), { mode: 'section', startAt: 0, ...o })}
-            stop={playback.stop}
-            onDone={saveMelody}
-            onClear={() => withUndo(`已清除${sectionName}的旋律`, { melodyGrid: undefined, melody: '', melodyTimed: undefined })}
-            withMelody={withMelody}
-            onWithMelody={setWithMelody}
-          />
+          {linkedNames.length > 0 && <p className="linked-note">和 {linkedNames.join('、')} 連動，改這裡會一起改</p>}
 
           <Timeline
             chords={items.map((it, i) => {
@@ -691,123 +744,53 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               };
             })}
             melody={grid}
+            ghostBars={ghostBars}
             selectedId={selId}
             pos={playback.pos?.sectionId === section.id ? playback.pos : null}
-            onSelect={(id) => setSelId((cur) => (cur === id ? null : id))}
-            onAdd={() => {
-              setSelId(null);
-              searchRef.current?.focus();
+            onSelect={(id) => {
+              setSingOpen(false);
+              setSelId((cur) => (cur === id ? null : id));
             }}
-            addActive={selId === null}
+            onAdd={() => openAdd('common')}
+            addActive={panelMode === 'add'}
           />
 
-          {items.length === 0 ? (
-            <div className="empty">
-              <p>點下面和弦盤裡的和弦就會加進來，也可以貼上 AI 給的和弦進行，或先載入範例聽聽看。</p>
-              <button type="button" className="btn btn-sm" onClick={() => patch({ progression: EXAMPLE.map((f) => ({ id: newId('c'), frets: [...f] })) })}>
-                載入範例：Fmaj7/C → Fm7 → Em7
+          <div className="arr-actions">
+            <button
+              type="button"
+              className={`btn ${panelMode === 'sing' ? 'is-active' : ''}`}
+              onClick={() => {
+                setSelId(null);
+                setSingOpen(true);
+              }}
+            >
+              <svg className="icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+              </svg>
+              唱旋律
+            </button>
+            {ghostBars > 0 && (
+              <button type="button" className="btn btn-primary" onClick={fillFromMelody}>
+                依旋律配上和弦（{ghostBars} 小節）
               </button>
-            </div>
-          ) : (
-            <div className="arr-foot">
-              <span className="help">點方塊看指法、改拍數；方塊越寬拍數越多，每 4 拍一小節。</span>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => withUndo(`已清空${sectionName}的 ${items.length} 個和弦`, { progression: [] })}>
-                清空此段
+            )}
+          </div>
+
+          {items.length === 0 && grid.length === 0 && (
+            <div className="empty">
+              <p>從右邊點和弦加進來，或按「唱旋律」先把旋律唱下來。</p>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => patch({ progression: EXAMPLE.map((f) => ({ id: newId('c'), frets: [...f] })) })}>
+                載入範例聽聽看
               </button>
             </div>
           )}
           {notice && <p className="notice err" role="alert">{notice}</p>}
         </section>
 
-        <div className={`work ${selected ? '' : 'is-draft'}`}>
-          {selected ? (
-            <ChordInspector
-              key={selected.id}
-              mode="edit"
-              index={selIndex}
-              frets={selected.frets}
-              onFrets={(f) => updateItem(selected.id, { frets: f })}
-              speller={key ? speller : undefined}
-              roman={selInfo?.roman ?? ''}
-              tagText={selInfo ? tagLabel(selInfo) : ''}
-              tagClass={`tag-${selInfo?.tag ?? 'chromatic'}`}
-              beats={beatsOf(selected)}
-              onBeats={(n) => updateItem(selected.id, { beats: n })}
-              shapes={shapes}
-              onPickShape={pickShape}
-              {...(selMelody ? { melody: selMelody } : {})}
-              onPlay={() => playChords([midisOfFrets(selected.frets)], 1.6)}
-              onDelete={() => remove(selected.id)}
-              onMove={move}
-              canMove={{ left: selIndex > 0, right: selIndex < items.length - 1 }}
-              onClose={() => setSelId(null)}
-            />
-          ) : (
-            <ChordInspector
-              key="draft"
-              mode="draft"
-              frets={draft}
-              onFrets={setDraft}
-              speller={key ? speller : undefined}
-              sectionName={sectionName}
-              onPlay={() => playChords([midisOfFrets(draft)], 1.6)}
-              onAdd={() => insert(draft)}
-            />
-          )}
-
-          <ChordPalette
-            keyInfo={key}
-            keyGuesses={keys}
-            keyLock={locked}
-            onLockKey={(k) => patch({ keyLock: k })}
-            speller={speller}
-            style={style}
-            onStyle={setStyle}
-            suggestions={suggestions}
-            insertHint={insertHint}
-            onAddChord={addChord}
-            onAddChords={addChords}
-            onPasteText={(text) => setPasteSeed((p) => ({ text, n: (p?.n ?? 0) + 1 }))}
-            onPlaySuggestion={playSuggestion}
-            onAddSuggestion={addSuggestion}
-            onDraft={() => setSelId(null)}
-            searchRef={searchRef}
-          >
-            <ChordImportPanel
-              seed={pasteSeed}
-              style={style}
-              sectionName={sectionName}
-              hasChords={items.length > 0}
-              beatSec={60 / bpm}
-              onPreview={(f) => {
-                setSelId(null);
-                setDraft(f);
-              }}
-              onAddHere={(list, mode) => {
-                const added = list.map((f) => ({ id: newId('c'), frets: [...f] }));
-                if (mode === 'replace' && items.length > 0) {
-                  withUndo(`已用 ${added.length} 個貼上的和弦取代原本的 ${items.length} 個`, { progression: added });
-                } else patch({ progression: [...items, ...added] });
-              }}
-              onAddSections={(rows) => {
-                let next = idea;
-                let first: string | undefined;
-                for (const r of rows) {
-                  const res = addSection(next, r.label);
-                  next = updateSection(res.idea, res.section.id, {
-                    progression: r.frets.map((f) => ({ id: newId('c'), frets: [...f] })),
-                  });
-                  first ??= res.section.id;
-                }
-                store.updateActive(() => next);
-                if (first) setSectionId(first);
-              }}
-            />
-          </ChordPalette>
-        </div>
-
-        <section className="more" aria-labelledby="h-more">
-          <h2 id="h-more" className="more-title">進階工具</h2>
+        <details className="more-tools">
+          <summary>更多工具：聲部動向、用文字輸入旋律、舊版旋律配和弦</summary>
+          <div className="more">
 
           <details className="panel fold">
             <summary>聲部動向：每條弦怎麼移動</summary>
@@ -949,9 +932,129 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             />
           </details>
 
-        </section>
+          </div>
+        </details>
       </main>
-      </>
+      </div>
+
+      <aside className="ws-side" aria-label="工具">
+        {panelMode === 'sing' ? (
+          <SingAlong
+            key={section.id}
+            hasChords={items.length > 0}
+            bars={singBars}
+            onBars={setSingBars}
+            takes={takeInfos}
+            onUseTake={(id) => {
+              const t = takes.find((x) => x.id === id);
+              if (t) patch(gridPatch(t.notes));
+            }}
+            onHearTake={hearTake}
+            onClose={() => setSingOpen(false)}
+            sectionName={sectionName}
+            beatSec={60 / bpm}
+            totalBeats={items.length ? totalBeats : singBars * 4}
+            keyInfo={key}
+            speller={speller}
+            hasMelody={grid.length > 0}
+            start={(o) => playback.play(recordPlan(), { mode: 'section', startAt: 0, ...o })}
+            stop={playback.stop}
+            onDone={saveMelody}
+            onClear={() => withUndo(`已清除${sectionName}的旋律`, { melodyGrid: undefined, melody: '', melodyTimed: undefined, melodyTakes: undefined })}
+            withMelody={withMelody}
+            onWithMelody={setWithMelody}
+          />
+        ) : selected ? (
+          <ChordInspector
+            key={selected.id}
+            mode="edit"
+            index={selIndex}
+            frets={selected.frets}
+            onFrets={(f) => updateItem(selected.id, { frets: f })}
+            speller={key ? speller : undefined}
+            roman={selInfo?.roman ?? ''}
+            tagText={selInfo ? tagLabel(selInfo) : ''}
+            tagClass={`tag-${selInfo?.tag ?? 'chromatic'}`}
+            beats={beatsOf(selected)}
+            onBeats={(n) => updateItem(selected.id, { beats: n })}
+            shapes={shapes}
+            onPickShape={pickShape}
+            {...(selMelody ? { melody: selMelody } : {})}
+            onPlay={() => playChords([midisOfFrets(selected.frets)], 1.6)}
+            onDelete={() => remove(selected.id)}
+            onMove={move}
+            canMove={{ left: selIndex > 0, right: selIndex < items.length - 1 }}
+            onClose={() => setSelId(null)}
+          />
+        ) : (
+          <ChordPalette
+            keyInfo={key}
+            keyGuesses={keys}
+            keyLock={locked}
+            onLockKey={(k) => patch({ keyLock: k })}
+            speller={speller}
+            style={style}
+            onStyle={setStyle}
+            suggestions={suggestions}
+            insertHint={insertHint}
+            onAddChord={addChord}
+            onAddChords={addChords}
+            onPasteText={(text) => {
+              setPasteSeed((x) => ({ text, n: (x?.n ?? 0) + 1 }));
+              setPalTab('type');
+            }}
+            onPlaySuggestion={playSuggestion}
+            onAddSuggestion={addSuggestion}
+            searchRef={searchRef}
+            tab={palTab}
+            onTab={setPalTab}
+            board={
+              <ChordInspector
+                key="draft"
+                mode="draft"
+                frets={draft}
+                onFrets={setDraft}
+                speller={key ? speller : undefined}
+                sectionName={sectionName}
+                onPlay={() => playChords([midisOfFrets(draft)], 1.6)}
+                onAdd={() => insert(draft)}
+              />
+            }
+          >
+            <ChordImportPanel
+              seed={pasteSeed}
+              style={style}
+              sectionName={sectionName}
+              hasChords={items.length > 0}
+              beatSec={60 / bpm}
+              onPreview={(f) => {
+                setDraft(f);
+                setPalTab('board');
+              }}
+              onAddHere={(list, mode) => {
+                const added = list.map((f) => ({ id: newId('c'), frets: [...f] }));
+                if (mode === 'replace' && items.length > 0) {
+                  withUndo(`已用 ${added.length} 個貼上的和弦取代原本的 ${items.length} 個`, { progression: added });
+                } else patch({ progression: [...items, ...added] });
+              }}
+              onAddSections={(rows) => {
+                let next = idea;
+                let first: string | undefined;
+                for (const r of rows) {
+                  const res = addSection(next, r.label);
+                  next = updateSection(res.idea, res.section.id, {
+                    progression: r.frets.map((f) => ({ id: newId('c'), frets: [...f] })),
+                  });
+                  first ??= res.section.id;
+                }
+                store.updateActive(() => next);
+                if (first) setSectionId(first);
+              }}
+            />
+          </ChordPalette>
+        )}
+      </aside>
+      </div>
       )}
       </div>
 

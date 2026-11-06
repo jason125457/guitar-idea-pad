@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkChordAgainstMelody, chordSymbol, chordsForMelody, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody } from './index';
+import { checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody } from './index';
 
 const C = parseChordSymbol('C')!;
 const FMAJ7 = parseChordSymbol('Fmaj7')!;
@@ -56,5 +56,18 @@ describe('melody against chords', () => {
     expect(ideas.some((n) => n.startsWith('F'))).toBe(true);
     expect(ideas).not.toContain('Em');
     expect(ideas).not.toContain('G');
+  });
+});
+
+describe('harmonizeBars', () => {
+  it('picks a fitting chord per bar and carries the last one over silent bars', () => {
+    const notes = [
+      { midi: 64, beat: 0, beats: 2 }, { midi: 67, beat: 2, beats: 2 }, // E G → C
+      { midi: 65, beat: 4, beats: 2 }, { midi: 69, beat: 6, beats: 2 }, // F A → F 或 Dm
+    ];
+    const bars = harmonizeBars(notes, 0, 3, KEY_C).map((c) => chordSymbol(c));
+    expect(bars[0]).toMatch(/^(C|Em|Am)/);
+    expect(['F', 'Dm', 'Fmaj7', 'Dm7']).toContain(bars[1]);
+    expect(bars[2]).toBe(bars[1]); // 第三小節沒唱：沿用
   });
 });

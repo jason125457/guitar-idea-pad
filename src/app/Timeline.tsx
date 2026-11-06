@@ -23,6 +23,8 @@ interface Props {
   addActive: boolean;
   /** 跟著這段唱錄下的旋律（拍點對齊段落開頭） */
   melody?: readonly BeatNote[];
+  /** 和弦後面還有幾小節只唱了旋律、還沒配和弦 */
+  ghostBars?: number;
 }
 
 /** 一列放幾拍：桌機四小節（16 拍），手機兩小節（8 拍）。 */
@@ -44,12 +46,32 @@ function useColumns(): number {
  * 小節時間軸：每個和弦方塊的寬度等於它佔的拍數，四拍一小節。
  * 播放時目前的和弦會亮起來，拍點一格一格跟著走（參考 Chordify、Riffstation 的做法）。
  */
-export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, melody = [] }: Props) {
+export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
   const cols = useColumns();
   // 旋律的高低範圍：上下各留一個半音，避免最高、最低的音貼邊
   const lo = melody.length ? Math.min(...melody.map((n) => n.midi)) - 1 : 0;
   const hi = melody.length ? Math.max(...melody.map((n) => n.midi)) + 1 : 1;
+  /** 畫出 [start, start + len) 拍之間的旋律 */
+  const lane = (start: number, len: number) => (
+    <span className="tl-mel" aria-hidden="true">
+      {melody
+        .filter((n) => n.beat < start + len && n.beat + n.beats > start)
+        .map((n) => {
+          const a = Math.max(n.beat, start);
+          const b = Math.min(n.beat + n.beats, start + len);
+          return (
+            <span
+              key={`${n.beat}-${n.midi}`}
+              className="tl-note"
+              title={midiName(n.midi)}
+              style={{ left: `${((a - start) / len) * 100}%`, width: `${((b - a) / len) * 100}%`, bottom: `${((n.midi - lo) / (hi - lo)) * 100}%` }}
+            />
+          );
+        })}
+    </span>
+  );
   let beat = 0;
+  const chordBeats = chords.reduce((n, c) => n + c.beats, 0);
   return (
     <ol className="tl" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }} aria-label="和弦時間軸（方塊寬度＝拍數）">
       {chords.map((c, i) => {
@@ -72,28 +94,7 @@ export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, 
               onClick={() => onSelect(c.id)}
             >
               {startBeat % 4 === 0 && <span className="tl-bar" aria-hidden="true">{startBeat / 4 + 1}</span>}
-              {melody.length > 0 && (
-                <span className="tl-mel" aria-hidden="true">
-                  {melody
-                    .filter((n) => n.beat < startBeat + c.beats && n.beat + n.beats > startBeat)
-                    .map((n) => {
-                      const a = Math.max(n.beat, startBeat);
-                      const b = Math.min(n.beat + n.beats, startBeat + c.beats);
-                      return (
-                        <span
-                          key={`${n.beat}-${n.midi}`}
-                          className="tl-note"
-                          title={midiName(n.midi)}
-                          style={{
-                            left: `${((a - startBeat) / c.beats) * 100}%`,
-                            width: `${((b - a) / c.beats) * 100}%`,
-                            bottom: `${((n.midi - lo) / (hi - lo)) * 100}%`,
-                          }}
-                        />
-                      );
-                    })}
-                </span>
-              )}
+              {melody.length > 0 && lane(startBeat, c.beats)}
               <span className="chip-name">{c.name}</span>
               <span className="chip-roman">{c.roman}</span>
               {c.fit === 'clash' && <span className="tl-clash" title={`跟旋律的 ${c.clashText ?? ''} 有半音摩擦`}>摩擦</span>}
@@ -106,6 +107,15 @@ export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, 
           </li>
         );
       })}
+      {Array.from({ length: ghostBars }, (_, g) => (
+        <li key={`ghost-${g}`} className="tl-block tl-ghost" style={{ gridColumn: `span ${Math.min(4, cols)}` }}>
+          <div className="tl-main">
+            {(chordBeats + g * 4) % 4 === 0 && <span className="tl-bar" aria-hidden="true">{(chordBeats + g * 4) / 4 + 1}</span>}
+            {lane(chordBeats + g * 4, 4)}
+            <span className="tl-ghost-text">還沒配和弦</span>
+          </div>
+        </li>
+      ))}
       <li className={`tl-block tl-add ${addActive ? 'is-sel' : ''}`} style={{ gridColumn: `span ${Math.min(4, cols)}` }}>
         <button type="button" className="tl-main" aria-pressed={addActive} onClick={onAdd}>
           <span className="tl-plus" aria-hidden="true">＋</span>

@@ -105,10 +105,26 @@ export interface Section {
   pattern?: StrumPattern;
   /** 跟著這段和弦唱錄下的旋律，對齊在段落的拍點上（beat 0 = 段落開頭） */
   melodyGrid?: BeatNote[];
+  /** 之前唱過的幾次（新的在前，最多 MAX_TAKES 次）；melodyGrid 是目前採用的那次 */
+  melodyTakes?: MelodyTake[];
+}
+
+export interface MelodyTake {
+  id: string;
+  /** 錄音時間（毫秒） */
+  at: number;
+  notes: BeatNote[];
+}
+export const MAX_TAKES = 6;
+
+/** 加一次新唱的旋律並採用它；超過 MAX_TAKES 次就丟掉最舊的。 */
+export function addTake(s: Pick<Section, 'melodyTakes'>, notes: BeatNote[], now = Date.now()): { take: MelodyTake; takes: MelodyTake[] } {
+  const take = { id: newId('t'), at: now, notes: notes.map((n) => ({ ...n })) };
+  return { take, takes: [take, ...(s.melodyTakes ?? [])].slice(0, MAX_TAKES) };
 }
 
 /** 連動段落之間共用的內容。 */
-const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern', 'melodyGrid'] as const;
+const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern', 'melodyGrid', 'melodyTakes'] as const;
 
 /** 旋律文字與時間資料音高完全對得上才回傳；否則代表旋律被手動改過，時間資料不可信。 */
 export function timedMelodyOf(section: Pick<Section, 'melody' | 'melodyTimed'>): TimedNote[] | undefined {
@@ -240,6 +256,7 @@ export function duplicateSection(idea: Idea, sectionId: string, linked: boolean)
     progression: src.progression.map((p) => ({ ...p, id: newId('c'), frets: [...p.frets] })),
     ...(src.melodyTimed ? { melodyTimed: src.melodyTimed.map((n) => ({ ...n })) } : {}),
     ...(src.melodyGrid ? { melodyGrid: src.melodyGrid.map((n) => ({ ...n })) } : {}),
+    ...(src.melodyTakes ? { melodyTakes: src.melodyTakes.map((t) => ({ ...t, id: newId('t'), notes: t.notes.map((n) => ({ ...n })) })) } : {}),
     ...(link ? { link } : {}),
   };
   const sections = [...idea.sections];
@@ -393,6 +410,17 @@ function normalizeSection(x: unknown): Section | undefined {
   if (typeof o.pattern === 'string' && PATTERN_IDS.has(o.pattern)) section.pattern = o.pattern as StrumPattern;
   const grid = normalizeGrid(o.melodyGrid);
   if (grid) section.melodyGrid = grid;
+  if (Array.isArray(o.melodyTakes)) {
+    const takes = o.melodyTakes
+      .map((t: unknown) => {
+        const x = t as Partial<MelodyTake> | null;
+        const notes = normalizeGrid(x?.notes);
+        return x && notes ? { id: typeof x.id === 'string' ? x.id : newId('t'), at: typeof x.at === 'number' ? x.at : 0, notes } : undefined;
+      })
+      .filter((t): t is MelodyTake => !!t)
+      .slice(0, MAX_TAKES);
+    if (takes.length) section.melodyTakes = takes;
+  }
   return section;
 }
 

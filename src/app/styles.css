@@ -632,3 +632,113 @@ main { display: grid; gap: var(--s5); }
 .mel-tag { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; }
 .mel-tag-stable { color: var(--ok); }
 .mel-tag-color { color: var(--violet); }
+
+/* ── 版面：固定的上方播放列、左邊編曲、右邊工具欄 ── */
+.app { max-width: 1480px; }
+.topbar {
+  position: sticky; top: 0; z-index: 20; margin: calc(-1 * var(--s4)) calc(-1 * var(--s4)) 0; padding: var(--s3) var(--s4);
+  display: flex; align-items: center; gap: var(--s2) var(--s4); flex-wrap: wrap;
+  background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border);
+}
+.topbar .song-title { flex: 1 1 220px; }
+.topbar .song-name { font-size: 22px; }
+.topbar .transport { margin: 0; padding: 0; border: 0; gap: var(--s2); }
+.topbar .tp-play { min-width: 150px; }
+.topbar .bpm .input-sm { width: 72px; min-height: 40px; }
+.tp-loop { min-width: 44px; font-size: 18px; }
+.seg-sm .seg-btn { min-height: 40px; padding: 0 var(--s3); font-size: 13px; }
+
+.ws { display: grid; gap: var(--s5); align-items: start; }
+.ws-main { display: grid; gap: var(--s4); min-width: 0; }
+.ws-main main { display: grid; gap: var(--s4); }
+@media (min-width: 1200px) {
+  .ws { grid-template-columns: minmax(0, 1fr) 400px; }
+  .ws-side { position: sticky; top: 84px; max-height: calc(100dvh - 100px); overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); }
+}
+.ws-side > .panel { margin: 0; }
+
+/* 段落標題列 */
+.arrange .arr-head { display: flex; align-items: center; gap: var(--s2) var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
+.arrange .arr-head h2 { margin: 0; font-size: 20px; }
+.arr-meta { color: var(--muted); font-size: 13px; }
+.arr-pattern { margin-left: auto; }
+.arr-pattern .input { width: auto; min-height: 40px; }
+.arrange .linked-note { margin: calc(-1 * var(--s2)) 0 var(--s3); }
+.arr-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+.arr-actions .btn { display: inline-flex; align-items: center; gap: var(--s2); }
+.arrange .empty p { margin: var(--s3) 0 var(--s2); color: var(--muted); }
+
+/* ⋯ 選單 */
+.menu { position: relative; }
+.menu > summary { list-style: none; font-size: 20px; line-height: 1; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 280px; padding: var(--s2);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  display: grid; gap: var(--s1);
+}
+.menu-pop hr { border: 0; border-top: 1px solid var(--border); margin: var(--s1) 0; width: 100%; }
+.menu-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); font-size: 14px; color: var(--muted); }
+.menu-row .input { width: auto; min-height: 40px; }
+.menu-item {
+  display: grid; text-align: left; gap: 2px; width: 100%; min-height: 44px; padding: var(--s2) var(--s3);
+  border: 0; border-radius: 8px; background: transparent; font-size: 14px;
+}
+.menu-item:hover { background: var(--surface); }
+.menu-item small { font-size: 12px; color: var(--muted); }
+.menu-danger { color: var(--danger); }
+
+/* 結構條：精簡 */
+.structure { padding: var(--s3) var(--s4); }
+.structure .st-head h2 { font-size: 15px; margin-bottom: var(--s2); }
+.structure .st-block { min-height: 60px; }
+
+/* 右邊：加和弦分頁 */
+.palette .pal-head { align-items: center; }
+.palette .pal-where { margin: var(--s1) 0 var(--s3); }
+.ptabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: var(--s3); }
+.ptab {
+  flex: 1; min-height: 40px; border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: var(--muted); font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+}
+.ptab.is-on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.ptab-count { font-size: 11px; min-width: 18px; padding: 0 4px; border-radius: 999px; background: var(--surface-2); color: var(--text); }
+.palette .pal-group:first-child { padding-top: 0; }
+.palette [role='tabpanel'] .pal-group:last-child { border-bottom: 0; }
+.pal-empty { margin: var(--s2) 0; }
+.palette .pal-sugs { grid-template-columns: 1fr; }
+.palette .import { border-top: 1px solid var(--border); margin-top: var(--s2); }
+.inspector-bare .now { margin-top: 0; }
+
+/* 右邊：選中的和弦 */
+.inspector .insp-head h2 { font-size: 15px; color: var(--muted); font-weight: 500; }
+.insp-x { min-width: 44px; font-size: 16px; }
+.inspector .now { margin-top: var(--s2); min-height: 0; }
+.insp-more { margin-top: var(--s3); border-top: 1px solid var(--border); padding-top: var(--s2); }
+.insp-more > summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 14px; }
+.inspector .insp-controls { margin-top: var(--s2); }
+.inspector .insp-del { margin-left: auto; }
+
+/* 右邊：唱旋律 */
+.sing-panel { display: grid; gap: var(--s2); }
+.sing-panel .insp-head { margin-bottom: var(--s1); }
+.sing-panel .help { margin: 0; }
+.sing-intro { font-size: 14px !important; color: var(--text) !important; }
+.sing-go { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); margin-top: var(--s1); }
+.sing-panel .sing-rec { display: grid; justify-items: center; gap: var(--s2); padding: var(--s3) 0; }
+.sing-panel .sing-count { font-size: 44px; }
+.takes { margin-top: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); display: grid; gap: var(--s2); }
+.take-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+.take { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s2); border-radius: 10px; border: 1px solid transparent; }
+.take.is-on { border-color: var(--accent); background: var(--bg); }
+.take-name { flex: 1; display: grid; font-size: 14px; }
+.take-name small { font-size: 12px; color: var(--muted); }
+
+/* 只唱了旋律、還沒配和弦的小節 */
+.tl-ghost .tl-main { border-style: dashed; border-left-width: 1px; background: transparent; cursor: default; }
+.tl-ghost-text { font-size: 12px; color: var(--muted); }
+
+/* 更多工具 */
+.more-tools { border: 1px dashed var(--border); border-radius: var(--radius); padding: 0 var(--s4); }
+.more-tools > summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 14px; }
+.more-tools[open] { padding-bottom: var(--s4); }

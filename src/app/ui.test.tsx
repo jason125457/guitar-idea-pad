@@ -96,18 +96,28 @@ describe('UndoToast', () => {
 });
 
 describe('App', () => {
-  it('names a typed chord, then loads, clears and restores a progression', async () => {
-    render(<App />);
-    const input = await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
+  const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
+  /** 等畫面載入（右邊的加和弦分頁出現） */
+  const ready = () => screen.findByRole('tab', { name: '常用' });
+  const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name }));
+  /** 清空這段（在段落的 ⋯ 選單裡）；空的段落沒有這個選項 */
+  const clearSection = () => {
+    const b = screen.queryByRole('button', { name: '清空這段的和弦' });
+    if (b) fireEvent.click(b);
+  };
+  const sectionTabs = () => within(document.querySelector('.st-strip') as HTMLElement).getAllByRole('tab');
 
-    fireEvent.change(input, { target: { value: 'x32010' } });
-    expect(document.querySelector('.now-name')?.textContent).toBe('C');
+  it('names a chord pressed on the board, then loads, clears and restores a progression', async () => {
+    render(<App />);
+    await ready();
+    tab('自己按');
+    fireEvent.change(screen.getByLabelText('六弦 → 一弦，x 代表悶音'), { target: { value: 'x32010' } });
+    expect(document.querySelector('.inspector-bare .now-name')?.textContent).toBe('C');
 
     fireEvent.click(await screen.findByRole('button', { name: /載入範例/ }));
-    const chipNames = () => [...document.querySelectorAll('.chip-name')].map((e) => e.textContent);
     await waitFor(() => expect(chipNames()).toEqual(['Fmaj7/C', 'Fm7/C', 'Em7/B']));
 
-    fireEvent.click(screen.getByRole('button', { name: '清空此段' }));
+    clearSection();
     expect(chipNames()).toEqual([]);
     const toast = document.querySelector('.toast') as HTMLElement;
     expect(toast.textContent).toContain('已清空');
@@ -117,19 +127,16 @@ describe('App', () => {
 
   it('turns a pasted chord progression into high-position electric voicings', async () => {
     render(<App />);
-    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
-    const clear = screen.queryByRole('button', { name: '清空此段' });
-    if (clear) fireEvent.click(clear);
-
+    await ready();
+    clearSection();
+    tab('打字／貼上');
     fireEvent.change(screen.getByLabelText('和弦進行'), {
       target: { value: '這只是說明，C 和 F 都有提到。\n副歌：C → G/B → Am7 → Fmaj7' },
     });
-    const rows = document.querySelectorAll('.import-row');
-    expect(rows).toHaveLength(1);
+    expect(document.querySelectorAll('.import-row')).toHaveLength(1);
     expect(screen.getByLabelText('第 1 行的段落')).toHaveProperty('value', 'chorus');
 
     fireEvent.click(screen.getByRole('button', { name: /^＋ 加進/ }));
-    const chipNames = () => [...document.querySelectorAll('.chip-name')].map((e) => e.textContent);
     await waitFor(() => expect(chipNames()).toEqual(['C', 'G/B', 'Am7', 'Fmaj7']));
     // 電吉他高把位：沒有空弦
     for (const f of [...document.querySelectorAll('.import-frets')].map((e) => e.textContent ?? '')) {
@@ -139,18 +146,21 @@ describe('App', () => {
 
   it('adds chords from the palette and edits the selected one in place', async () => {
     render(<App />);
-    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
-    const clear = screen.queryByRole('button', { name: '清空此段' });
-    if (clear) fireEvent.click(clear);
-    const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
+    await ready();
+    clearSection();
 
-    // 鎖定 C 大調，點調內和弦就加進時間軸
+    // 鎖定 C 大調，點調內和弦就加進時間軸；加完會選取剛加的和弦，按 ✕ 回到加和弦
     fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
     fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
     fireEvent.click(screen.getByRole('button', { name: '加入 Am' }));
     await waitFor(() => expect(chipNames()).toEqual(['C', 'Am']));
 
-    // 打和弦名稱加入，插在選中的 Am 後面
+    // 打和弦名稱加入：Am 選取中，會插在它後面
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    fireEvent.click(screen.getByRole('button', { name: /第 2 個和弦 Am/ }));
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    tab('打字／貼上');
     fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Fmaj7' } });
     fireEvent.click(screen.getByRole('button', { name: '＋ Fmaj7' }));
     await waitFor(() => expect(chipNames()).toEqual(['C', 'Am', 'Fmaj7']));
@@ -174,30 +184,29 @@ describe('App', () => {
 
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
-    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
-    const clear = screen.queryByRole('button', { name: '清空此段' });
-    if (clear) fireEvent.click(clear);
-    const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
-    const search = screen.getByLabelText('直接輸入和弦名稱');
-
-    fireEvent.change(search, { target: { value: 'Cmaj7、Fmaj7' } });
+    await ready();
+    clearSection();
+    tab('打字／貼上');
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Cmaj7、Fmaj7' } });
     fireEvent.click(screen.getByRole('button', { name: '＋ 加入 2 個' }));
     await waitFor(() => expect(chipNames()).toEqual(['Cmaj7', 'Fmaj7']));
 
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    tab('打字／貼上');
     const paragraph = '主歌：Cadd9 → Fmaj7#11\n副歌：C → G/B → Am7 → Fmaj7';
-    fireEvent.paste(search, { clipboardData: { getData: () => paragraph } });
+    fireEvent.paste(screen.getByLabelText('直接輸入和弦名稱'), { clipboardData: { getData: () => paragraph } });
     await waitFor(() => expect((screen.getByLabelText('和弦進行') as HTMLTextAreaElement).value).toBe(paragraph));
     expect(document.querySelectorAll('.import-row')).toHaveLength(2);
   });
 
   it('shows the song as a chart with the chosen shapes, and jumps back to edit a chord', async () => {
     render(<App />);
-    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
-    const clear = screen.queryByRole('button', { name: '清空此段' });
-    if (clear) fireEvent.click(clear);
+    await ready();
+    clearSection();
+    tab('打字／貼上');
     fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Am7 Fmaj7 Am7' } });
     fireEvent.click(screen.getByRole('button', { name: '＋ 加入 3 個' }));
-    await waitFor(() => expect(document.querySelectorAll('.tl .chip-name')).toHaveLength(3));
+    await waitFor(() => expect(chipNames()).toHaveLength(3));
 
     fireEvent.click(screen.getByRole('button', { name: '譜（和弦＋指法）' }));
     // 用到的指法：Am7 出現兩次但按法一樣，只列一次
@@ -211,34 +220,44 @@ describe('App', () => {
 
   it('repeats a section as a linked copy, so editing one changes both', async () => {
     render(<App />);
-    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
-    const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
+    await ready();
+    tab('打字／貼上');
     fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Am7' } });
     fireEvent.click(screen.getByRole('button', { name: '＋ Am7' }));
     await waitFor(() => expect(chipNames()).toContain('Am7'));
     const before = chipNames();
 
-    fireEvent.click(screen.getByRole('button', { name: '重複這段（連動）' }));
-    const tabs = () => screen.getAllByRole('tab');
-    await waitFor(() => expect(tabs()).toHaveLength(2));
-    expect(tabs()[1]!.getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: /^重複這段（連動）/ }));
+    await waitFor(() => expect(sectionTabs()).toHaveLength(2));
+    expect(sectionTabs()[1]!.getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('.linked-note')?.textContent).toContain('主歌 1');
 
     // 在第二段加一個和弦，切回第一段也看得到
+    tab('打字／貼上');
     fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'G' } });
     fireEvent.click(screen.getByRole('button', { name: '＋ G' }));
     await waitFor(() => expect(chipNames()).toEqual([...before, 'G']));
-    fireEvent.click(tabs()[0]!);
+    fireEvent.click(sectionTabs()[0]!);
     await waitFor(() => expect(chipNames()).toEqual([...before, 'G']));
   });
 
   it('shows the key and roman numerals for the example progression', async () => {
     // 同一個測試檔共用假的 IndexedDB：上一個測試存下的進行會被載回來
     render(<App />);
-    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
-    const example = screen.queryByRole('button', { name: /載入範例/ });
-    if (example) fireEvent.click(example);
+    await ready();
+    clearSection();
+    fireEvent.click(await screen.findByRole('button', { name: /載入範例/ }));
     await waitFor(() => expect(document.querySelector('.key-name')?.textContent).toContain('C 大調'));
-    expect([...document.querySelectorAll('.chip-roman')].map((e) => e.textContent).slice(0, 3)).toEqual(['IVmaj7', 'ivm7', 'iiim7']);
+    expect([...document.querySelectorAll('.tl .chip-roman')].map((e) => e.textContent).slice(0, 3)).toEqual(['IVmaj7', 'ivm7', 'iiim7']);
+  });
+
+  it('lets you sing before there are any chords', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.click(screen.getByRole('button', { name: '唱旋律' }));
+    expect(screen.getByText(/這段還沒有和弦：只放節拍器/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /開始唱/ })).toHaveProperty('disabled', false);
+    expect(screen.getByLabelText('唱幾小節')).toHaveProperty('value', '4');
   });
 });

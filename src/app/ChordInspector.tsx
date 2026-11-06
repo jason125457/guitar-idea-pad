@@ -97,18 +97,46 @@ export function ChordInspector(p: EditProps | DraftProps) {
   const hasPressed = p.frets.some((f) => f !== null && f > 0);
   const name = current.best ? chordSymbol(current.best, p.speller) : undefined;
 
+  // 指板與文字輸入：自己按新和弦時直接攤開；調整已選的和弦時收起來，需要再打開
+  const boardEditor = (
+    <>
+      <Fretboard frets={p.frets} onChange={p.onFrets} fingers={fingering} />
+      {hasPressed && (
+        <p className="fingers-line">
+          {fingering ? (
+            <>手指 <span className="mono">{formatFingers(fingering)}</span>（1 食指、2 中指、3 無名指、4 小指、T 拇指）</>
+          ) : (
+            '這個按法需要超過四隻手指或跨太多品格，不容易按'
+          )}
+        </p>
+      )}
+
+      <label className="field" htmlFor="fret-text">六弦 → 一弦，x 代表悶音</label>
+      <input
+        id="fret-text"
+        className="input mono"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="8 10 10 9 8 8"
+        value={text}
+        onChange={(e) => onText(e.target.value)}
+        aria-invalid={!!error}
+        aria-describedby="fret-help"
+      />
+      <p id="fret-help" className={error ? 'help err' : 'help'} role={error ? 'alert' : undefined}>
+        {error || '也可以直接打指法；兩位數品格請用空格分開，如 x 3 2 0 1 0'}
+      </p>
+    </>
+  );
+
   return (
-    <section className="panel inspector" aria-labelledby="h-inspector">
-      <div className="insp-head">
-        <h2 id="h-inspector">
-          {p.mode === 'edit' ? `第 ${p.index + 1} 個和弦` : '自己按一個和弦'}
-        </h2>
-        {p.mode === 'edit' && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={p.onClose}>
-            取消選取
-          </button>
-        )}
-      </div>
+    <section className={p.mode === 'edit' ? 'panel inspector' : 'inspector inspector-bare'} aria-labelledby={p.mode === 'edit' ? 'h-inspector' : undefined}>
+      {p.mode === 'edit' && (
+        <div className="insp-head">
+          <h2 id="h-inspector">第 {p.index + 1} 個和弦</h2>
+          <button type="button" className="btn btn-sm btn-ghost insp-x" onClick={p.onClose} aria-label="取消選取，回到加和弦">✕</button>
+        </div>
+      )}
 
       <div className="now" aria-live="polite">
         {current.best ? (
@@ -169,7 +197,7 @@ export function ChordInspector(p: EditProps | DraftProps) {
 
       {p.mode === 'edit' && p.shapes.length > 1 && (
         <div className="shapes">
-          <h3 className="shapes-title">換按法 <span className="help">點一下試聽並換上；排第一個的跟前後和弦最好接</span></h3>
+          <h3 className="shapes-title">按法 <span className="help">點一下就換上，第一個最好接</span></h3>
           <ul className="shapes-list">
             {p.shapes.map((sh) => {
               const where = sh.position === 0 ? '空弦' : sh.open && sh.position <= 4 ? '開放和弦' : `第 ${sh.position} 品`;
@@ -199,48 +227,27 @@ export function ChordInspector(p: EditProps | DraftProps) {
         </div>
       )}
 
-      <Fretboard frets={p.frets} onChange={p.onFrets} fingers={fingering} />
-      {hasPressed && (
-        <p className="fingers-line">
-          {fingering ? (
-            <>手指 <span className="mono">{formatFingers(fingering)}</span>（1 食指、2 中指、3 無名指、4 小指、T 拇指）</>
-          ) : (
-            '這個按法需要超過四隻手指或跨太多品格，不容易按'
-          )}
-        </p>
-      )}
-
-      <label className="field" htmlFor="fret-text">六弦 → 一弦，x 代表悶音</label>
-      <input
-        id="fret-text"
-        className="input mono"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder="8 10 10 9 8 8"
-        value={text}
-        onChange={(e) => onText(e.target.value)}
-        aria-invalid={!!error}
-        aria-describedby="fret-help"
-      />
-      <p id="fret-help" className={error ? 'help err' : 'help'} role={error ? 'alert' : undefined}>
-        {error || '也可以直接打指法；兩位數品格請用空格分開，如 x 3 2 0 1 0'}
-      </p>
+      {p.mode === 'draft' && boardEditor}
 
       {p.mode === 'edit' ? (
         <>
           <div className="insp-controls">
+            <button type="button" className="btn btn-sm" disabled={!current.notes.length} onClick={p.onPlay}>▶ 試聽</button>
             <div className="stepper" role="group" aria-label="拍數">
               <button type="button" className="btn btn-sm" disabled={p.beats <= 1} onClick={() => p.onBeats(p.beats - 1)} aria-label="少一拍">−</button>
               <output className="stepper-val" aria-live="polite">{p.beats} 拍</output>
               <button type="button" className="btn btn-sm" disabled={p.beats >= MAX_BEATS} onClick={() => p.onBeats(p.beats + 1)} aria-label="多一拍">＋</button>
             </div>
           </div>
-          <div className="row wrap">
-            <button type="button" className="btn" disabled={!current.notes.length} onClick={p.onPlay}>▶ 試聽</button>
-            <button type="button" className="btn btn-ghost" disabled={!p.canMove.left} onClick={() => p.onMove(-1)} aria-label="往前移一格">← 前移</button>
-            <button type="button" className="btn btn-ghost" disabled={!p.canMove.right} onClick={() => p.onMove(1)} aria-label="往後移一格">後移 →</button>
-            <button type="button" className="btn btn-ghost insp-del" onClick={p.onDelete} aria-label={`刪除 ${name ?? '這個和弦'}`}>刪除</button>
+          <div className="insp-controls">
+            <button type="button" className="btn btn-sm btn-ghost" disabled={!p.canMove.left} onClick={() => p.onMove(-1)} aria-label="往前移一格">← 前移</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={!p.canMove.right} onClick={() => p.onMove(1)} aria-label="往後移一格">後移 →</button>
+            <button type="button" className="btn btn-sm btn-ghost insp-del" onClick={p.onDelete} aria-label={`刪除 ${name ?? '這個和弦'}`}>刪除</button>
           </div>
+          <details className="insp-more">
+            <summary>自己用指板調整</summary>
+            {boardEditor}
+          </details>
         </>
       ) : (
         <div className="row wrap">

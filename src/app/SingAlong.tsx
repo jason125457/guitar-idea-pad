@@ -16,9 +16,22 @@ import {
 const COUNT_IN = 4;
 const QUIET_RMS = 0.01;
 
+export interface TakeInfo {
+  id: string;
+  label: string;
+  count: number;
+  current: boolean;
+}
+
 interface Props {
-  /** 這段有沒有和弦可以跟著唱 */
-  ready: boolean;
+  /** 這段有沒有和弦可以跟著唱；沒有的話只放節拍器，唱 bars 小節 */
+  hasChords: boolean;
+  bars: number;
+  onBars: (n: number) => void;
+  takes: TakeInfo[];
+  onUseTake: (id: string) => void;
+  onHearTake: (id: string) => void;
+  onClose: () => void;
   sectionName: string;
   beatSec: number;
   totalBeats: number;
@@ -70,7 +83,7 @@ export function SingAlong(p: Props) {
       setError('沒有抓到旋律。靠近麥克風、用「啦」或「嗚」唱大聲一點，每個音拉長一點再試一次。');
       return;
     }
-    setMessage(`錄到 ${grid.length} 個音，已經放到和弦上面了`);
+    setMessage(`錄到 ${grid.length} 個音${p.hasChords ? '，已經放到和弦上面了' : '。可以按「依旋律配上和弦」讓工具先配一版'}`);
     p.onDone(grid);
   };
 
@@ -89,7 +102,7 @@ export function SingAlong(p: Props) {
       setError(e instanceof TrackerError ? e.message : '無法開始錄音');
       return;
     }
-    const res = p.start({ clickOnly, countInBeats: COUNT_IN });
+    const res = p.start({ clickOnly: clickOnly || !p.hasChords, countInBeats: COUNT_IN });
     if (!res) {
       tr.stop();
       setPhase('idle');
@@ -138,61 +151,97 @@ export function SingAlong(p: Props) {
 
   const keyName = p.keyInfo ? `${p.speller(p.keyInfo.tonic)} ${p.keyInfo.mode === 'major' ? '大調' : '小調'}` : '';
 
+  const recording = phase === 'recording';
   return (
-    <div className="sing">
-      {phase === 'recording' ? (
+    <section className="panel sing-panel" aria-labelledby="h-sing">
+      <div className="insp-head">
+        <h2 id="h-sing">唱旋律</h2>
+        <button type="button" className="btn btn-sm btn-ghost insp-x" onClick={p.onClose} disabled={recording} aria-label="關閉，回到加和弦">✕</button>
+      </div>
+
+      {recording ? (
         <div className="sing-rec" role="status">
-          <button type="button" className="btn btn-primary" onClick={finish}>■ 唱完了</button>
           <span className="sing-count" aria-label={live.count ? `倒數 ${live.count}` : '錄音中'}>
             {live.count ? live.count : live.note || '…'}
           </span>
-          <span className="help sing-hint">
-            {live.count ? '數完四拍就開始唱' : live.level < QUIET_RMS ? '聽不太到你的聲音：靠近麥克風一點' : `正在錄${p.sectionName}的旋律，唱完會自動停`}
-          </span>
+          <p className="help sing-hint">
+            {live.count ? '數完四拍就開始唱' : live.level < QUIET_RMS ? '聽不太到你的聲音：靠近麥克風一點' : `正在錄${p.sectionName}，唱完會自動停`}
+          </p>
+          <button type="button" className="btn btn-primary sing-go" onClick={finish}>■ 唱完了</button>
         </div>
       ) : (
-        <div className="sing-row">
-          <button type="button" className="btn" disabled={!p.ready || phase === 'starting'} onClick={() => void begin()}>
+        <>
+          <p className="help sing-intro">
+            {p.hasChords
+              ? '先數四拍，再從頭播這段，你跟著唱（用「啦」也可以）。'
+              : '這段還沒有和弦：只放節拍器，先把旋律唱下來，之後再配和弦。'}
+          </p>
+          {!p.hasChords && (
+            <label className="menu-row">
+              <span>唱幾小節</span>
+              <select className="input input-sm" value={p.bars} onChange={(e) => p.onBars(Number(e.target.value))}>
+                {[2, 4, 8, 16].map((n) => (
+                  <option key={n} value={n}>{n} 小節</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {p.hasChords && (
+            <div className="menu-row">
+              <span>伴奏</span>
+              <div className="seg seg-sm" role="group" aria-label="錄音時的伴奏">
+                <button type="button" className={`seg-btn ${!clickOnly ? 'is-on' : ''}`} aria-pressed={!clickOnly} onClick={() => setClickOnly(false)}>
+                  和弦
+                </button>
+                <button type="button" className={`seg-btn ${clickOnly ? 'is-on' : ''}`} aria-pressed={clickOnly} onClick={() => setClickOnly(true)}>
+                  只放節拍器
+                </button>
+              </div>
+            </div>
+          )}
+          {p.hasChords && !clickOnly && <p className="help">放和弦時建議戴耳機，麥克風才不會收到吉他聲。</p>}
+          {keyName && (
+            <label className="check sing-opt">
+              <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />
+              音有點偏時，吸附到 {keyName} 的音
+            </label>
+          )}
+          <button type="button" className="btn btn-primary sing-go" disabled={phase === 'starting'} onClick={() => void begin()}>
             <svg className="icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="3" width="6" height="11" rx="3" />
               <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
             </svg>
-            {p.hasMelody ? '重新唱一次旋律' : '跟著和弦唱旋律'}
+            {p.takes.length ? '再唱一次' : '開始唱'}
           </button>
-          <div className="seg" role="group" aria-label="錄音時的伴奏">
-            <button type="button" className={`seg-btn ${!clickOnly ? 'is-on' : ''}`} aria-pressed={!clickOnly} onClick={() => setClickOnly(false)}>
-              放和弦
-            </button>
-            <button type="button" className={`seg-btn ${clickOnly ? 'is-on' : ''}`} aria-pressed={clickOnly} onClick={() => setClickOnly(true)}>
-              只放節拍器
-            </button>
-          </div>
-          {keyName && (
-            <label className="check sing-opt">
-              <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />
-              音唱得有點偏時，吸附到 {keyName} 的音
-            </label>
-          )}
-          {p.hasMelody && (
-            <>
-              <label className="check sing-opt">
-                <input type="checkbox" checked={p.withMelody} onChange={(e) => p.onWithMelody(e.target.checked)} />
-                播放時一起放旋律
-              </label>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={p.onClear}>清除旋律</button>
-            </>
-          )}
-        </div>
+        </>
       )}
-      {phase === 'idle' && !p.hasMelody && !error && (
-        <p className="help">
-          {p.ready
-            ? '會先數四拍，再從頭播這段，你跟著唱就好（用「啦」或「嗚」也可以）。放和弦時建議戴耳機，麥克風才不會收到吉他聲。'
-            : '先在這段加幾個和弦，就能跟著和弦唱旋律。'}
-        </p>
-      )}
+
       {error && <p className="help err" role="alert">{error}</p>}
       {message && !error && <p className="notice" role="status">{message}</p>}
-    </div>
+
+      {p.takes.length > 0 && !recording && (
+        <div className="takes">
+          <h3 className="shapes-title">唱過的 <span className="help">點「用這次」換成那一次</span></h3>
+          <ul className="take-list">
+            {p.takes.map((t) => (
+              <li key={t.id} className={`take ${t.current ? 'is-on' : ''}`}>
+                <span className="take-name">{t.label}<small>{t.count} 個音</small></span>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => p.onHearTake(t.id)} aria-label={`聽${t.label}`}>▶</button>
+                {t.current ? (
+                  <span className="shape-badge sb-now">使用中</span>
+                ) : (
+                  <button type="button" className="btn btn-sm" onClick={() => p.onUseTake(t.id)}>用這次</button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <label className="check sing-opt">
+            <input type="checkbox" checked={p.withMelody} onChange={(e) => p.onWithMelody(e.target.checked)} />
+            播放時一起放旋律
+          </label>
+          {p.hasMelody && <button type="button" className="btn btn-sm btn-ghost" onClick={p.onClear}>清除旋律</button>}
+        </div>
+      )}
+    </section>
   );
 }
