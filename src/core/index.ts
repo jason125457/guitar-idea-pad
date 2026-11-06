@@ -10,6 +10,7 @@ export * from './song';
 export * from './backup';
 export * from './melody';
 export * from './harmonize';
+export * from './melodyFit';
 export * from './symbol';
 export * from './shapes';
 

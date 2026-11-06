@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Fret } from '../core';
 import { App } from './App';
 import { Fretboard } from './Fretboard';
+import { Timeline } from './Timeline';
 import { UndoToast } from './UndoToast';
 
 // jsdom 沒有 AudioContext：加和弦、換按法時會順便刷一下，這裡只要不出聲就好
@@ -51,6 +52,31 @@ describe('Fretboard', () => {
     render(<FretboardHarness initial={[null, 3, 2, 0, 1, 0]} />);
     fireEvent.click(screen.getByRole('button', { name: '外部改成高把位' }));
     expect(screen.getByText('第 20–24 品')).toBeTruthy();
+  });
+});
+
+describe('Timeline with a sung melody', () => {
+  it('draws each note over the chord it falls under and marks a clashing chord', () => {
+    render(
+      <Timeline
+        chords={[
+          { id: 'a', name: 'C', roman: 'I', tag: 'diatonic', beats: 4, fit: 'stable' },
+          { id: 'b', name: 'G', roman: 'V', tag: 'diatonic', beats: 4, fit: 'clash', clashText: 'C5' },
+        ]}
+        selectedId={null}
+        pos={null}
+        onSelect={() => {}}
+        onAdd={() => {}}
+        addActive
+        melody={[{ midi: 64, beat: 0, beats: 2 }, { midi: 67, beat: 2, beats: 4 }, { midi: 72, beat: 6, beats: 2 }]}
+      />,
+    );
+    const blocks = [...document.querySelectorAll('.tl-block:not(.tl-add)')];
+    // 第二個音跨過兩個和弦：兩邊各畫一段
+    expect(blocks.map((b) => b.querySelectorAll('.tl-note').length)).toEqual([2, 2]);
+    expect(blocks[0]!.querySelector('.tl-clash')).toBeNull();
+    expect(blocks[1]!.querySelector('.tl-clash')?.textContent).toBe('摩擦');
+    expect(screen.getByRole('button', { name: /第 2 個和弦 G.*跟旋律的 C5 有摩擦/ })).toBeTruthy();
   });
 });
 

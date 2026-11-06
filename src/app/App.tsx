@@ -5,6 +5,9 @@ import {
   BPM_RANGE,
   DEFAULT_BEATS,
   addSection,
+  checkChordAgainstMelody,
+  chordsForMelody,
+  melodyIn,
   duplicateSection,
   linkedSections,
   moveSectionTo,
@@ -42,6 +45,7 @@ import {
   rankShapes,
   type ChordFunctionInfo,
   type ChordRef,
+  type BeatNote,
   type Fret,
   type Idea,
   type Motion,
@@ -59,6 +63,7 @@ import { ChordPalette } from './ChordPalette';
 import { HarmonizePanel } from './HarmonizePanel';
 import { HumRecorder } from './HumRecorder';
 import { SongSidebar, formatDuration } from './SongSidebar';
+import { SingAlong } from './SingAlong';
 import { SongSheet } from './SongSheet';
 import { SongStructure } from './SongStructure';
 import { SoundPanel } from './SoundPanel';
@@ -168,6 +173,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const [loop, setLoop] = useState(false);
   const [notice, setNotice] = useState('');
   const [navOpen, setNavOpen] = useState(false);
+  const [withMelody, setWithMelody] = useState(true);
   const [pasteSeed, setPasteSeed] = useState<{ text: string; n: number } | undefined>();
   const searchRef = useRef<HTMLInputElement>(null);
   const playback = usePlayback();
@@ -383,9 +389,26 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
       return { sectionId: s.id, itemId: it.id, midis: midisOfFrets(it.frets), beats: beatsOf(it), beatSec: 60 / bpmOf(s), pattern: patternOf(s), sectionBeat };
     });
   };
+  /** 對齊拍點的旋律換成秒（給播放用），offset 是這段在整個播放裡從第幾秒開始 */
+  const melodySecs = (s: Idea['sections'][number], offset = 0) =>
+    (s.melodyGrid ?? []).map((n) => ({ midi: n.midi, startSec: offset + n.beat * (60 / bpmOf(s)), durSec: n.beats * (60 / bpmOf(s)) }));
   // 有選取和弦時從那個和弦開始播（像 DAW 的播放游標），沒選就從頭
-  const playSection = () => playback.play(planOf(section), { loop, mode: 'section', startAt: selIndex >= 0 ? selIndex : 0 });
-  const playSong = () => playback.play(idea.sections.flatMap(planOf), { mode: 'song' });
+  const playSection = () =>
+    playback.play(planOf(section), {
+      loop,
+      mode: 'section',
+      startAt: selIndex >= 0 ? selIndex : 0,
+      ...(withMelody ? { melody: melodySecs(section) } : {}),
+    });
+  const playSong = () => {
+    let offset = 0;
+    const melody = idea.sections.flatMap((s) => {
+      const m = melodySecs(s, offset);
+      offset += (s.progression.reduce((n, it) => n + beatsOf(it), 0) * 60) / bpmOf(s);
+      return m;
+    });
+    playback.play(idea.sections.flatMap(planOf), { mode: 'song', ...(withMelody ? { melody } : {}) });
+  };
   const songHasChords = idea.sections.some((s) => s.progression.length > 0);
 
   const songLen = songLength(idea);
@@ -416,6 +439,57 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
 
   const totalBeats = items.reduce((n, it) => n + beatsOf(it), 0);
   const bars = totalBeats / 4;
+
+  // ── 跟著和弦唱的旋律 ──
+  const grid: BeatNote[] = section.melodyGrid ?? [];
+  /** 每個和弦從第幾拍開始 */
+  const starts = items.reduce<number[]>((acc, _it, i) => [...acc, i === 0 ? 0 : (acc[i - 1] as number) + beatsOf(items[i - 1] as ProgressionItem)], []);
+  const melodyAt = (i: number) => melodyIn(grid, starts[i] ?? 0, (starts[i] ?? 0) + beatsOf(items[i] as ProgressionItem));
+  const names2 = (ms: readonly number[]) => ms.map((m) => midiName(m, speller)).join('、');
+  const saveMelody = (g: BeatNote[]) => {
+    const beatSec = 60 / bpm;
+    withUndo(`已錄好${sectionName}的旋律（${g.length} 個音）`, {
+      melodyGrid: g,
+      melody: notesToMelodyText(g, speller),
+      melodyTimed: g.map((n) => ({ midi: n.midi, startSec: n.beat * beatSec, durSec: n.beats * beatSec })),
+    });
+  };
+  /** 選中和弦的旋律分析：唱了什麼、合不合、還能配什麼 */
+  const selMelody = (() => {
+    if (!selected || !selRef || !grid.length) return undefined;
+    const notes = melodyAt(selIndex);
+    if (!notes.length) return undefined;
+    const check = checkChordAgainstMelody(selRef, notes);
+    const k = key ?? { tonic: selRef.rootPc, mode: 'major' as const };
+    const ideas = chordsForMelody(notes, k, selRef, 4)
+      .filter((i) => !(i.chord.rootPc === selRef.rootPc && i.chord.qualityId === selRef.qualityId && i.chord.bassPc === selRef.bassPc))
+      .slice(0, 3);
+    const beatSec = 60 / bpm;
+    const start = starts[selIndex] ?? 0;
+    return {
+      sung: names2([...new Set(notes.map((n) => n.midi))]),
+      fit: check.fit,
+      clashText: names2(check.clashes),
+      ideas: ideas.map((i) => {
+        const f = voiceAfter(prevFrets, i.chord, style) ?? selected.frets;
+        return {
+          name: chordSymbol(i.chord, speller),
+          fit: i.fit,
+          onUse: () => {
+            withUndo(`已把 ${label(selRef)} 換成 ${chordSymbol(i.chord, speller)}`, {
+              progression: items.map((x) => (x.id === selected.id ? { ...x, frets: [...f] } : x)),
+            });
+            playChords([midisOfFrets(f)], 1.4);
+          },
+          onHear: () =>
+            playback.play(
+              [{ ...(planOf(section)[selIndex] as PlanItem), midis: midisOfFrets(f) }],
+              { mode: 'section', melody: notes.map((n) => ({ midi: n.midi, startSec: (n.beat - start) * beatSec, durSec: n.beats * beatSec })) },
+            ),
+        };
+      }),
+    };
+  })();
   const sectionName = names[section.id] ?? '';
   const selInfo = selected ? infoAt(selIndex) : undefined;
   const insertHint = selected
@@ -584,11 +658,39 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             </label>
           </div>
 
+          <SingAlong
+            key={section.id}
+            ready={items.length > 0}
+            sectionName={sectionName}
+            beatSec={60 / bpm}
+            totalBeats={totalBeats}
+            keyInfo={key}
+            speller={speller}
+            hasMelody={grid.length > 0}
+            start={(o) => playback.play(planOf(section), { mode: 'section', startAt: 0, ...o })}
+            stop={playback.stop}
+            onDone={saveMelody}
+            onClear={() => withUndo(`已清除${sectionName}的旋律`, { melodyGrid: undefined, melody: '', melodyTimed: undefined })}
+            withMelody={withMelody}
+            onWithMelody={setWithMelody}
+          />
+
           <Timeline
             chords={items.map((it, i) => {
               const info = infoAt(i);
-              return { id: it.id, name: label(analyzed[i]?.best), roman: info?.roman ?? '', tag: info?.tag, beats: beatsOf(it) };
+              const best = analyzed[i]?.best;
+              const check = best && grid.length ? checkChordAgainstMelody(best, melodyAt(i)) : undefined;
+              return {
+                id: it.id,
+                name: label(best),
+                roman: info?.roman ?? '',
+                tag: info?.tag,
+                beats: beatsOf(it),
+                fit: check?.fit,
+                clashText: check ? names2(check.clashes) : '',
+              };
             })}
+            melody={grid}
             selectedId={selId}
             pos={playback.pos?.sectionId === section.id ? playback.pos : null}
             onSelect={(id) => setSelId((cur) => (cur === id ? null : id))}
@@ -633,6 +735,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               onBeats={(n) => updateItem(selected.id, { beats: n })}
               shapes={shapes}
               onPickShape={pickShape}
+              {...(selMelody ? { melody: selMelody } : {})}
               onPlay={() => playChords([midisOfFrets(selected.frets)], 1.6)}
               onDelete={() => remove(selected.id)}
               onMove={move}

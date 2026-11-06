@@ -51,3 +51,41 @@ export function playNotes(notes: readonly PlayableNote[]): number {
   const c = getContext();
   return scheduleNotes(c, c.currentTime + 0.08, notes);
 }
+
+/** 把旋律排在絕對時間上：startSec 是相對 t0 的秒數（不像 scheduleNotes 會把第一個音對齊 t0）。 */
+export function scheduleMelody(c: AudioContext, t0: number, notes: readonly PlayableNote[], level = 0.18): void {
+  for (const n of notes) {
+    const start = t0 + n.startSec;
+    if (start < c.currentTime) continue;
+    const dur = Math.max(0.08, n.durSec - 0.03);
+    const osc = c.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 440 * 2 ** ((n.midi - 69) / 12);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(level, start + 0.02);
+    g.gain.setValueAtTime(level, start + dur - 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(g).connect(c.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+    active.push(osc);
+  }
+}
+
+/** 節拍器的「滴」：第一下（accent）高一點。times 是 AudioContext 的絕對時間。 */
+export function scheduleClicks(c: AudioContext, times: readonly number[], accentFirst = true): void {
+  times.forEach((t, i) => {
+    const osc = c.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = accentFirst && i % 4 === 0 ? 1760 : 1320;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    osc.connect(g).connect(c.destination);
+    osc.start(t);
+    osc.stop(t + 0.08);
+    active.push(osc);
+  });
+}

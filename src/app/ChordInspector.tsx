@@ -10,6 +10,7 @@ import {
   parseFretInput,
   suggestFingering,
   type Fret,
+  type MelodyFit,
   type RankedShape,
   type Speller,
 } from '../core';
@@ -38,6 +39,13 @@ interface EditProps extends Common {
   /** 同一個和弦的各種按法（已依跟前後和弦好不好接排序） */
   shapes: RankedShape[];
   onPickShape: (f: Fret[]) => void;
+  /** 這個和弦撐的那幾拍唱了什麼、合不合，以及也合這段旋律的其他和弦 */
+  melody?: {
+    sung: string;
+    fit: MelodyFit | undefined;
+    clashText: string;
+    ideas: { name: string; fit: MelodyFit; onUse: () => void; onHear: () => void }[];
+  };
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
   canMove: { left: boolean; right: boolean };
@@ -126,6 +134,38 @@ export function ChordInspector(p: EditProps | DraftProps) {
           <div className="now-empty">{current.notes.length ? '只有單音，還不能判斷和弦' : '在下面的指板點出按法，這裡會顯示和弦名稱'}</div>
         )}
       </div>
+
+      {p.mode === 'edit' && p.melody && (
+        <div className={`mel-fit mel-${p.melody.fit ?? 'none'}`}>
+          <h3 className="shapes-title">跟旋律合不合</h3>
+          <p className="mel-sung">
+            這裡唱了 <span className="mono">{p.melody.sung}</span>
+          </p>
+          <p className="mel-verdict">
+            {p.melody.fit === 'clash'
+              ? `${p.melody.clashText} 跟這個和弦差半音，聽起來會刺。可以換成下面合旋律的和弦，或改一下旋律。`
+              : p.melody.fit === 'stable'
+                ? '旋律大多落在和弦音上，很穩。'
+                : '旋律有一些延伸音，不衝突，帶一點色彩。'}
+          </p>
+          {p.melody.ideas.length > 0 && (
+            <>
+              <p className="help mel-ideas-label">{p.melody.fit === 'clash' ? '換成這些就不會摩擦：' : '這段旋律也可以配：'}</p>
+              <ul className="mel-ideas">
+                {p.melody.ideas.map((i) => (
+                  <li key={i.name} className="mel-idea">
+                    <button type="button" className="btn btn-sm" onClick={i.onUse} aria-label={`換成 ${i.name}`}>
+                      換成 <strong>{i.name}</strong>
+                      <span className={`mel-tag mel-tag-${i.fit}`}>{i.fit === 'stable' ? '很穩' : '帶色彩'}</span>
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={i.onHear} aria-label={`試聽 ${i.name} 配旋律`}>▶</button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       {p.mode === 'edit' && p.shapes.length > 1 && (
         <div className="shapes">

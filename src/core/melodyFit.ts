@@ -1,0 +1,148 @@
+/**
+ * 跟著段落唱的旋律（對齊拍點）與和弦之間的關係：
+ * 錄音結果吸附到八分音符格、找出跟和弦有半音摩擦的地方、依旋律推薦合的和弦。
+ * 純函式，可以直接測試。
+ */
+import { chordPcs, type ChordRef } from './chord';
+import { diatonicChords, scalePcsForKey, type KeyGuess } from './key';
+import { mod12 } from './pitch';
+import { quality } from './qualities';
+
+/** 對齊在段落拍點上的旋律音：beat 是從段落開頭算的第幾拍。 */
+export interface BeatNote {
+  midi: number;
+  beat: number;
+  beats: number;
+}
+
+const GRID = 0.5; // 八分音符
+const snap = (x: number) => Math.round(x / GRID) * GRID;
+
+/**
+ * 把錄到的音（以段落開頭為 0 秒）吸附到八分音符格上；
+ * 段落外與太短的音丟掉，吸附後重疊的音讓前一個縮短。
+ */
+export function quantizeMelody(
+  notes: readonly { midi: number; startSec: number; durSec: number }[],
+  beatSec: number,
+  totalBeats: number,
+): BeatNote[] {
+  const out: BeatNote[] = [];
+  for (const n of [...notes].sort((a, b) => a.startSec - b.startSec)) {
+    if (n.durSec < beatSec * GRID * 0.5) continue; // 不到半個八分音符：多半是偵測雜訊，不要吸附成一整格
+    const beat = snap(n.startSec / beatSec);
+    const end = Math.min(totalBeats, snap((n.startSec + n.durSec) / beatSec));
+    if (beat < 0 || beat >= totalBeats || end - beat < GRID - 1e-9) continue;
+    const prev = out[out.length - 1];
+    if (prev && prev.beat + prev.beats > beat) {
+      if (beat - prev.beat < GRID - 1e-9) {
+        // 吸到同一格：留比較長的那個
+        if (end - beat > prev.beats) out[out.length - 1] = { midi: n.midi, beat, beats: end - beat };
+        continue;
+      }
+      prev.beats = beat - prev.beat;
+    }
+    out.push({ midi: n.midi, beat, beats: end - beat });
+  }
+  return out;
+}
+
+/** 落在 [start, end) 拍之間的旋律音（裁切到範圍內），strong = 從正拍開始或至少唱滿一拍。 */
+export function melodyIn(notes: readonly BeatNote[], start: number, end: number): (BeatNote & { strong: boolean })[] {
+  const out: (BeatNote & { strong: boolean })[] = [];
+  for (const n of notes) {
+    const a = Math.max(start, n.beat);
+    const b = Math.min(end, n.beat + n.beats);
+    if (b - a <= 1e-9) continue;
+    const onBeat = Math.abs(a - Math.round(a)) < 1e-9 && a === n.beat;
+    out.push({ midi: n.midi, beat: a, beats: b - a, strong: onBeat || b - a >= 1 });
+  }
+  return out;
+}
+
+export type MelodyFit = 'stable' | 'color' | 'clash';
+
+/** 一個旋律音對和弦：和弦音很穩；9、6（或小和弦的 11）是延伸音，帶色彩；跟和弦音差半音就是摩擦。 */
+export function noteAgainstChord(midi: number, ch: Pick<ChordRef, 'rootPc' | 'qualityId'>): MelodyFit {
+  const q = quality(ch.qualityId);
+  const rel = mod12(midi - ch.rootPc);
+  if (q.intervals.includes(rel)) return 'stable';
+  const rubs = q.intervals.some((t) => mod12(rel - t) === 1 || mod12(t - rel) === 1);
+  const minorish = q.intervals.includes(3);
+  const extension = rel === 2 || rel === 9 || (minorish && rel === 5);
+  if (extension && !q.intervals.some((t) => mod12(rel - t) === 1)) return 'color';
+  return rubs ? 'clash' : 'color';
+}
+
+export interface ChordMelodyCheck {
+  fit: MelodyFit | undefined;
+  /** 有摩擦的旋律音（不重複） */
+  clashes: number[];
+  /** 0–1，旋律有多少比例落在和弦音上（依長度加權） */
+  stableShare: number;
+}
+
+/**
+ * 這個和弦撐的那幾拍裡，旋律跟它合不合。
+ * 只有「在正拍上或唱滿一拍」的摩擦才算數；一閃而過的經過音不算。
+ */
+export function checkChordAgainstMelody(ch: Pick<ChordRef, 'rootPc' | 'qualityId'>, notes: readonly (BeatNote & { strong: boolean })[]): ChordMelodyCheck {
+  if (!notes.length) return { fit: undefined, clashes: [], stableShare: 0 };
+  let total = 0;
+  let stable = 0;
+  const clashes = new Set<number>();
+  for (const n of notes) {
+    const f = noteAgainstChord(n.midi, ch);
+    total += n.beats;
+    if (f === 'stable') stable += n.beats;
+    if (f === 'clash' && n.strong) clashes.add(n.midi);
+  }
+  const stableShare = stable / total;
+  const fit: MelodyFit = clashes.size ? 'clash' : stableShare >= 0.6 ? 'stable' : 'color';
+  return { fit, clashes: [...clashes], stableShare };
+}
+
+export interface MelodyChordIdea {
+  chord: ChordRef;
+  fit: MelodyFit;
+  /** 越高越合 */
+  score: number;
+}
+
+/**
+ * 依這幾拍的旋律推薦和弦：調內三和弦與七和弦、加九和弦，再加上目前的和弦本身。
+ * 分數看旋律落在和弦音上的比例、有沒有摩擦，同分時偏向跟目前和弦共用較多音的（保留原本的感覺）。
+ */
+export function chordsForMelody(
+  notes: readonly (BeatNote & { strong: boolean })[],
+  key: Pick<KeyGuess, 'tonic' | 'mode'>,
+  current?: ChordRef,
+  limit = 3,
+): MelodyChordIdea[] {
+  if (!notes.length) return [];
+  const pool: ChordRef[] = [...diatonicChords(key), ...diatonicChords(key, true)];
+  const scale = scalePcsForKey(key);
+  for (const pc of [scale[0], scale[3]]) if (pc !== undefined) pool.push({ rootPc: pc, qualityId: 'add9', bassPc: pc });
+  if (current) pool.push(current);
+
+  const near = (c: ChordRef) => {
+    if (!current) return 0;
+    const a = new Set(chordPcs(c.rootPc, quality(c.qualityId)));
+    const shared = chordPcs(current.rootPc, quality(current.qualityId)).filter((p) => a.has(p)).length;
+    return shared * 0.04;
+  };
+  const seen = new Set<string>();
+  const ideas: MelodyChordIdea[] = [];
+  for (const c of pool) {
+    const k = `${c.rootPc}-${c.qualityId}-${c.bassPc}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const check = checkChordAgainstMelody(c, notes);
+    if (!check.fit) continue;
+    // 七和弦多一個音、比較容易「碰巧」包到旋律，稍微扣一點，讓簡單的和弦有機會排前面
+    const extra = quality(c.qualityId).intervals.length > 3 ? 0.05 : 0;
+    const score = check.stableShare - check.clashes.length * 0.6 - extra + near(c);
+    ideas.push({ chord: c, fit: check.fit, score });
+  }
+  return ideas.filter((i) => i.fit !== 'clash').sort((a, b) => b.score - a.score).slice(0, limit);
+}

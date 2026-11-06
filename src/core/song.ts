@@ -6,6 +6,7 @@
 import { analyzeVoicing, MAX_FRET, type AnalyzedChord, type Fret } from './chord';
 import { inferKey, type KeyGuess, type Mode } from './key';
 import { parseMelodyText } from './structure';
+import type { BeatNote } from './melodyFit';
 
 export const SCHEMA_VERSION = 2;
 
@@ -102,10 +103,12 @@ export interface Section {
   link?: string;
   /** 伴奏彈法；未設定時是每拍刷一下 */
   pattern?: StrumPattern;
+  /** 跟著這段和弦唱錄下的旋律，對齊在段落的拍點上（beat 0 = 段落開頭） */
+  melodyGrid?: BeatNote[];
 }
 
 /** 連動段落之間共用的內容。 */
-const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern'] as const;
+const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern', 'melodyGrid'] as const;
 
 /** 旋律文字與時間資料音高完全對得上才回傳；否則代表旋律被手動改過，時間資料不可信。 */
 export function timedMelodyOf(section: Pick<Section, 'melody' | 'melodyTimed'>): TimedNote[] | undefined {
@@ -236,6 +239,7 @@ export function duplicateSection(idea: Idea, sectionId: string, linked: boolean)
     id: newId('s'),
     progression: src.progression.map((p) => ({ ...p, id: newId('c'), frets: [...p.frets] })),
     ...(src.melodyTimed ? { melodyTimed: src.melodyTimed.map((n) => ({ ...n })) } : {}),
+    ...(src.melodyGrid ? { melodyGrid: src.melodyGrid.map((n) => ({ ...n })) } : {}),
     ...(link ? { link } : {}),
   };
   const sections = [...idea.sections];
@@ -387,7 +391,26 @@ function normalizeSection(x: unknown): Section | undefined {
   if (validBpm(o.bpm)) section.bpm = Math.round(o.bpm);
   if (typeof o.link === 'string' && o.link) section.link = o.link;
   if (typeof o.pattern === 'string' && PATTERN_IDS.has(o.pattern)) section.pattern = o.pattern as StrumPattern;
+  const grid = normalizeGrid(o.melodyGrid);
+  if (grid) section.melodyGrid = grid;
   return section;
+}
+
+function normalizeGrid(x: unknown): BeatNote[] | undefined {
+  if (!Array.isArray(x)) return undefined;
+  const ok = x.filter(
+    (n): n is BeatNote =>
+      typeof n === 'object' &&
+      n !== null &&
+      Number.isInteger((n as BeatNote).midi) &&
+      (n as BeatNote).midi >= 0 &&
+      (n as BeatNote).midi <= 127 &&
+      Number.isFinite((n as BeatNote).beat) &&
+      (n as BeatNote).beat >= 0 &&
+      Number.isFinite((n as BeatNote).beats) &&
+      (n as BeatNote).beats > 0,
+  );
+  return ok.length ? ok.map((n) => ({ midi: n.midi, beat: n.beat, beats: n.beats })) : undefined;
 }
 
 function normalizeTimed(x: unknown): TimedNote[] | undefined {

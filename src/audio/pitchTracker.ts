@@ -42,6 +42,8 @@ export class PitchTracker {
   private stream: MediaStream | undefined;
   private stopTimer: number | undefined;
   private starting = false;
+  /** 偵測節點開始收音時的 AudioContext 時間；幀的 t 從這裡起算 */
+  private origin = 0;
 
   get running(): boolean {
     return !!this.ctx;
@@ -71,6 +73,7 @@ export class PitchTracker {
         this.onFrame?.(f);
       };
       this.node = node;
+      this.origin = ctx.currentTime;
 
       if (source === 'mic') {
         // iPhone：錄音時切成「播放並錄音」，結束後在 release() 切回「播放媒體」
@@ -95,6 +98,11 @@ export class PitchTracker {
     } finally {
       this.starting = false;
     }
+  }
+
+  /** 現在對應到幀時間軸的哪一秒（用來把錄到的音對齊到另一個 AudioContext 的播放）。 */
+  now(): number {
+    return this.ctx ? this.ctx.currentTime - this.origin : 0;
   }
 
   /** 停止並回傳這次收到的所有幀。 */
