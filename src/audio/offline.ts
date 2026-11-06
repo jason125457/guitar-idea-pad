@@ -36,7 +36,7 @@ export interface OfflineStatus {
 }
 
 export async function getOfflineStatus(): Promise<OfflineStatus> {
-  const none = { steel: false, nylon: false };
+  const none = { steel: false, nylon: false, electric: false };
   if (!import.meta.env.PROD) return { mode: 'dev', app: false, samples: none };
   if (!swSupported()) return { mode: 'unsupported', app: false, samples: none };
   const samples = { ...none };

@@ -12,6 +12,7 @@ import {
   TIMBRES,
   getSoundState,
   loadSamples,
+  sampleOf,
   setTimbre,
   subscribe,
   type SampleTimbre,
@@ -37,7 +38,7 @@ export function SoundPanel() {
   // 取樣載入完成（可能剛被 service worker 存進快取）後更新狀態
   useEffect(() => {
     refresh();
-  }, [sound.samples.steel.status, sound.samples.nylon.status, refresh]);
+  }, [sound.samples.steel.status, sound.samples.nylon.status, sound.samples.electric.status, refresh]);
 
   const download = async (t: SampleTimbre) => {
     setBusy(t);
@@ -69,7 +70,8 @@ export function SoundPanel() {
   };
 
   const selected = sound.timbre;
-  const sel = selected === 'synth' ? undefined : sound.samples[selected];
+  const selFile = sampleOf(selected);
+  const sel = selFile ? sound.samples[selFile] : undefined;
 
   const status = (): string => {
     if (selected === 'synth') return '使用內建合成音色。';
@@ -87,7 +89,7 @@ export function SoundPanel() {
   };
 
   return (
-    <details className="sound panel">
+    <details className="sound panel fold">
       <summary>音色與離線</summary>
 
       <fieldset className="timbres">
@@ -102,7 +104,7 @@ export function SoundPanel() {
       </fieldset>
       <p className="help" role="status">{status()}</p>
       {sel?.status === 'error' && (
-        <button type="button" className="btn btn-sm" onClick={() => void loadSamples(selected as SampleTimbre)}>重試載入</button>
+        <button type="button" className="btn btn-sm" onClick={() => selFile && void loadSamples(selFile)}>重試載入</button>
       )}
       <p className="help">旋律試聽固定用簡單的合成音，才能和吉他和弦分得出來。</p>
 

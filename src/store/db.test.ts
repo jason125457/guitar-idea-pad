@@ -44,7 +44,7 @@ describe('IndexedDB store', () => {
     });
     const list = await listIdeas();
     const broken = list.find((i) => i.id === 'broken');
-    expect(broken?.title).toBe('未命名靈感'); // 被修復成可用的靈感
+    expect(broken?.title).toBe('未命名歌曲'); // 被修復成可用的靈感
     expect(broken?.sections.length).toBeGreaterThan(0);
   });
 });

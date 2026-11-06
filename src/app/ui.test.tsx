@@ -9,6 +9,13 @@ import { App } from './App';
 import { Fretboard } from './Fretboard';
 import { UndoToast } from './UndoToast';
 
+// jsdom 沒有 AudioContext：加和弦、換按法時會順便刷一下，這裡只要不出聲就好
+vi.mock('../audio/pluck', async (orig) => ({
+  ...(await orig<typeof import('../audio/pluck')>()),
+  playChords: vi.fn(() => 0),
+  playTimedChords: vi.fn(() => 0),
+}));
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -80,6 +87,82 @@ describe('App', () => {
     expect(toast.textContent).toContain('已清空');
     fireEvent.click(within(toast).getByRole('button', { name: '復原' }));
     await waitFor(() => expect(chipNames()).toEqual(['Fmaj7/C', 'Fm7/C', 'Em7/B']));
+  });
+
+  it('turns a pasted chord progression into high-position electric voicings', async () => {
+    render(<App />);
+    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
+    const clear = screen.queryByRole('button', { name: '清空此段' });
+    if (clear) fireEvent.click(clear);
+
+    fireEvent.change(screen.getByLabelText('和弦進行'), {
+      target: { value: '這只是說明，C 和 F 都有提到。\n副歌：C → G/B → Am7 → Fmaj7' },
+    });
+    const rows = document.querySelectorAll('.import-row');
+    expect(rows).toHaveLength(1);
+    expect(screen.getByLabelText('第 1 行的段落')).toHaveProperty('value', 'chorus');
+
+    fireEvent.click(screen.getByRole('button', { name: /^＋ 加進/ }));
+    const chipNames = () => [...document.querySelectorAll('.chip-name')].map((e) => e.textContent);
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G/B', 'Am7', 'Fmaj7']));
+    // 電吉他高把位：沒有空弦
+    for (const f of [...document.querySelectorAll('.import-frets')].map((e) => e.textContent ?? '')) {
+      expect(f.split(' ')).not.toContain('0');
+    }
+  });
+
+  it('adds chords from the palette and edits the selected one in place', async () => {
+    render(<App />);
+    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
+    const clear = screen.queryByRole('button', { name: '清空此段' });
+    if (clear) fireEvent.click(clear);
+    const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
+
+    // 鎖定 C 大調，點調內和弦就加進時間軸
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入 Am' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'Am']));
+
+    // 打和弦名稱加入，插在選中的 Am 後面
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Fmaj7' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ Fmaj7' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'Am', 'Fmaj7']));
+
+    // 選中 Am：拍數 −／＋ 直接改那一格，方塊的拍點跟著變
+    fireEvent.click(screen.getByRole('button', { name: /第 2 個和弦 Am/ }));
+    fireEvent.click(screen.getByRole('button', { name: '少一拍' }));
+    fireEvent.click(screen.getByRole('button', { name: '少一拍' }));
+    await waitFor(() => expect(document.querySelectorAll('.tl-block')[1]?.querySelectorAll('.tl-beat')).toHaveLength(2));
+
+    // 換按法：還是 Am，只是指法換了
+    const before = (screen.getByLabelText('六弦 → 一弦，x 代表悶音') as HTMLInputElement).value;
+    fireEvent.click(screen.getByRole('button', { name: /^換按法/ }));
+    await waitFor(() => expect((screen.getByLabelText('六弦 → 一弦，x 代表悶音') as HTMLInputElement).value).not.toBe(before));
+    expect(chipNames()).toEqual(['C', 'Am', 'Fmaj7']);
+  });
+
+  it('repeats a section as a linked copy, so editing one changes both', async () => {
+    render(<App />);
+    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
+    const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Am7' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ Am7' }));
+    await waitFor(() => expect(chipNames()).toContain('Am7'));
+    const before = chipNames();
+
+    fireEvent.click(screen.getByRole('button', { name: '重複這段（連動）' }));
+    const tabs = () => screen.getAllByRole('tab');
+    await waitFor(() => expect(tabs()).toHaveLength(2));
+    expect(tabs()[1]!.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('.linked-note')?.textContent).toContain('主歌 1');
+
+    // 在第二段加一個和弦，切回第一段也看得到
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'G' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ G' }));
+    await waitFor(() => expect(chipNames()).toEqual([...before, 'G']));
+    fireEvent.click(tabs()[0]!);
+    await waitFor(() => expect(chipNames()).toEqual([...before, 'G']));
   });
 
   it('shows the key and roman numerals for the example progression', async () => {

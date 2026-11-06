@@ -118,7 +118,7 @@ describe('backupFileName', () => {
     const d = new Date(2026, 9, 19);
     expect(backupFileName(d)).toBe('指板靈感本-備份-2026-10-19.json');
     expect(backupFileName(d, 'a/b:c*?"<>|d')).toBe('指板靈感本-a_b_c______d-2026-10-19.json');
-    expect(backupFileName(d, '   ')).toBe('指板靈感本-未命名靈感-2026-10-19.json');
+    expect(backupFileName(d, '   ')).toBe('指板靈感本-未命名歌曲-2026-10-19.json');
     expect(backupFileName(d, 'x'.repeat(100))).toContain('x'.repeat(40) + '-2026');
   });
 });

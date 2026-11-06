@@ -8,6 +8,13 @@ import { STRUM_GAP_SEC, activePlayer, strumVelocity } from './sound';
 
 const buffers = new Map<number, AudioBuffer>();
 let active: AudioBufferSourceNode[] = [];
+const stopListeners = new Set<() => void>();
+
+/** 任何地方呼叫 stopAll（包含開始播別的東西）時通知，讓播放游標知道要停。回傳取消訂閱。 */
+export function onStopAll(fn: () => void): () => void {
+  stopListeners.add(fn);
+  return () => stopListeners.delete(fn);
+}
 
 function pluck(c: AudioContext, midi: number): AudioBuffer {
   const cached = buffers.get(midi);
@@ -45,12 +52,33 @@ export function stopAll(): void {
   }
   active = [];
   activePlayer()?.stop();
+  for (const fn of [...stopListeners]) fn();
 }
 
 export interface TimedChord {
   midis: number[];
   startSec: number;
   durSec: number;
+  /** 這一下的力度倍率（預設 1），用來做重拍 */
+  level?: number;
+}
+
+/**
+ * 每個和弦刷 beats 下、每拍一下，第一拍最重，其餘稍輕，聽起來像在跟著拍子刷，
+ * 而不是一個和弦撥一次就放著響。
+ */
+export function strumBeats(chords: readonly { midis: number[]; beats: number }[], beatSec: number): TimedChord[] {
+  let beat = 0;
+  return chords.flatMap(({ midis, beats }) => {
+    const start = beat;
+    beat += beats;
+    return Array.from({ length: beats }, (_, b) => ({
+      midis,
+      startSec: (start + b) * beatSec,
+      durSec: beatSec,
+      level: b === 0 ? 1 : 0.72,
+    }));
+  });
 }
 
 /** 把和弦排進 AudioContext 時間軸（t0 起算），每個和弦由低到高輕刷；不會先停掉正在播的聲音。 */
@@ -62,7 +90,7 @@ export function scheduleChords(c: AudioContext, t0: number, chords: readonly Tim
         .sort((a, b) => a - b)
         .forEach((m, ni) => {
           // time 是 AudioContext 的絕對時間；多留 0.5 秒讓琴弦自然收尾
-          player.start({ note: m, time: t0 + ch.startSec + ni * STRUM_GAP_SEC, duration: ch.durSec + 0.5, velocity: strumVelocity(ni, level) });
+          player.start({ note: m, time: t0 + ch.startSec + ni * STRUM_GAP_SEC, duration: ch.durSec + 0.5, velocity: strumVelocity(ni, level * (ch.level ?? 1)) });
         });
     }
     return;
@@ -75,7 +103,7 @@ export function scheduleChords(c: AudioContext, t0: number, chords: readonly Tim
         src.buffer = pluck(c, m);
         const gain = c.createGain();
         const start = t0 + ch.startSec + ni * 0.028;
-        gain.gain.setValueAtTime(level, start);
+        gain.gain.setValueAtTime(level * (ch.level ?? 1), start);
         gain.gain.setTargetAtTime(0, start + Math.max(0.2, ch.durSec - 0.15), 0.08);
         src.connect(gain).connect(c.destination);
         src.start(start);

@@ -1,24 +1,33 @@
 /**
- * 試聽音色：取樣吉他（鋼弦／尼龍弦，FluidR3_GM，CC BY 3.0）或內建合成音色。
+ * 試聽音色：取樣吉他（鋼弦／尼龍弦／乾淨電吉他，FluidR3_GM，CC BY 3.0）或內建合成音色。
  * 取樣檔放在 public/samples，與網站同源，所以可以被 service worker 快取而離線使用。
  * 取樣尚未載入完成（或載入失敗）時，播放會自動退回合成音色，不會沒聲音。
  */
 import type { Soundfont } from 'smplr';
 import { getContext } from './context';
 
-export type Timbre = 'steel' | 'nylon' | 'synth';
+export type Timbre = 'steel' | 'nylon' | 'electric' | 'synth';
 export type SampleTimbre = Exclude<Timbre, 'synth'>;
 
 export const TIMBRES: { id: Timbre; name: string; hint: string }[] = [
   { id: 'steel', name: '鋼弦吉他', hint: '明亮，適合刷弦' },
   { id: 'nylon', name: '尼龍弦吉他', hint: '溫暖柔和，適合指彈' },
-  { id: 'synth', name: '合成音色', hint: '免下載，音色較簡單' },
+  { id: 'electric', name: '電吉他（Clean）', hint: '乾淨清亮，適合聽高把位的色彩和弦' },  { id: 'synth', name: '合成音色', hint: '免下載，音色較簡單' },
 ];
 
 const FILE: Record<SampleTimbre, string> = {
   steel: 'acoustic_guitar_steel',
   nylon: 'acoustic_guitar_nylon',
+  electric: 'electric_guitar_clean',
 };
+
+/** 這個音色用哪一個取樣檔；合成音色不用。 */
+export function sampleOf(t: Timbre): SampleTimbre | undefined {
+  if (t === 'synth') return undefined;
+  return t;
+}
+
+const TIMBRE_IDS = new Set<string>(['steel', 'nylon', 'electric', 'synth']);
 
 export const SAMPLE_TIMBRES = Object.keys(FILE) as SampleTimbre[];
 
@@ -69,7 +78,7 @@ const TIMBRE_KEY = 'guitar-idea-pad.timbre';
 function readTimbre(): Timbre {
   try {
     const v = localStorage.getItem(TIMBRE_KEY);
-    if (v === 'steel' || v === 'nylon' || v === 'synth') return v;
+    if (v && TIMBRE_IDS.has(v)) return v as Timbre;
   } catch {
     /* 忽略 */
   }
@@ -78,7 +87,7 @@ function readTimbre(): Timbre {
 
 const idle = (): SampleLoad => ({ status: 'idle', loaded: 0, total: 0 });
 
-let state: SoundState = { timbre: readTimbre(), samples: { steel: idle(), nylon: idle() } };
+let state: SoundState = { timbre: readTimbre(), samples: { steel: idle(), nylon: idle(), electric: idle() } };
 const listeners = new Set<() => void>();
 const players = new Map<SampleTimbre, Soundfont>();
 const pending = new Map<SampleTimbre, Promise<void>>();
@@ -99,7 +108,8 @@ export const getSoundState = (): SoundState => state;
 
 /** 目前選用的取樣音色已載入時回傳播放器；否則 undefined（呼叫端退回合成音色）。 */
 export function activePlayer(): Soundfont | undefined {
-  return state.timbre === 'synth' ? undefined : players.get(state.timbre);
+  const s = sampleOf(state.timbre);
+  return s ? players.get(s) : undefined;
 }
 
 /** 載入（或重試）一種取樣音色；同時多次呼叫只會載入一次。 */
@@ -137,13 +147,14 @@ export function setTimbre(t: Timbre): void {
     /* 忽略 */
   }
   set({ ...state, timbre: t });
-  if (t !== 'synth') void loadSamples(t);
+  const s = sampleOf(t);
+  if (s) void loadSamples(s);
 }
 
 /** 在瀏覽器空檔預先載入目前選用的音色，第一次按播放時通常已經就緒。 */
 export function preloadSelected(): void {
-  if (state.timbre === 'synth') return;
-  const t = state.timbre;
+  const t = sampleOf(state.timbre);
+  if (!t) return;
   const run = () => void loadSamples(t);
   // Safari 沒有 requestIdleCallback
   if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 4000 });

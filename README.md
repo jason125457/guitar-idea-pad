@@ -45,22 +45,24 @@ npm run deploy         # 測試 → 建置（含型別檢查）→ 上傳 dist/ 
 | 路徑 | 說明 |
 |---|---|
 | `src/core/` | 純 TypeScript 理論引擎（無 DOM，可在 Worker / Node 執行） |
-| `src/core/song.ts` | 靈感 → 段落 → 和弦進行的資料結構與純函式（含載入驗證、v1 遷移） |
+| `src/core/song.ts` | 歌曲 → 段落 → 和弦進行的資料結構與純函式（含連動段落、載入驗證、v1 遷移） |
 | `src/store/` | IndexedDB 儲存層（`db.ts`）、自動儲存 hook（`useIdeaStore.ts`） |
 | `src/core/harmonize.ts` | 旋律配和弦：調性推論、速度估計、切窗、和弦候選與 Viterbi、指法串接 |
 | `src/core/melody.ts` | 音高軌跡 → 音符：過濾、中值濾波、切音、吸附半音／調內音（純函式，可用合成資料測試） |
 | `src/audio/` | 試聽（`sound.ts` 取樣吉他載入與音色、`pluck.ts` 和弦播放含合成備援、`offline.ts` 離線快取）、`pitch.worklet.ts`（AudioWorklet + pitchy）、`pitchTracker.ts`（麥克風／測試訊號 → 音高幀） |
 | `src/lab/` + `pitch-lab.html` | 哼唱音高偵測實驗室：即時音高、軌跡圖、參數調整、切音結果與播放 |
-| `src/app/` | React UI（靈感清單、段落分頁、直式指板、進行、分析、建議卡） |
+| `src/app/` | React UI（歌曲側邊欄、歌曲結構條、小節時間軸與播放游標、選中和弦的指法編輯、和弦盤、進階工具） |
 
 ## 資料結構
 
 ```
 Idea { id, title, createdAt, updatedAt, sections[] }
-  Section { id, label: intro|verse|prechorus|chorus|bridge|outro,
+  Section { id, label: intro|verse|prechorus|chorus|interlude|solo|bridge|outro,
             progression: [{ id, frets[6], beats? }], keyLock | null, melody: "A3 B3 …",
-            melodyTimed?: [{ midi, startSec, durSec }], bpm? }
+            melodyTimed?: [{ midi, startSec, durSec }], bpm?, link? }
 ```
+
+`link` 相同的段落是同一段音樂重複出現（例如副歌 1、副歌 2）：改其中一段，和弦、旋律、速度、調性與段落類型會同步到其他段。
 
 `beats` 預設 4、`bpm` 預設 90；兩者都是選填，舊資料與舊備份不用轉換。
 同一個瀏覽器開多個分頁時用 BroadcastChannel 互相通知存檔與刪除，較新的版本勝出。
@@ -70,7 +72,7 @@ Idea { id, title, createdAt, updatedAt, sections[] }
 第一版存在 localStorage 的和弦串會在首次載入時自動轉成一個「匯入的靈感」，寫入成功後才清除舊資料。
 
 `src/core` 模組：`chord`（指法解析、和弦辨識、斜線和弦）、`key`（調性推論、級數、借用／副屬／三全音替代）、
-`voiceLeading`（逐弦位移、平行移動、內聲部半音線）、`voicing`（指法生成）、`suggest`（三種情緒的銜接）、`structure`（副歌→主歌）。
+`voiceLeading`（逐弦位移、平行移動、內聲部半音線）、`voicing`（指法生成，含電吉他高把位風格與整串進行的指法最佳化）、`symbol`（和弦名稱與貼上文字的解析）、`suggest`（三種情緒的銜接）、`structure`（副歌→主歌）。
 
 ## 已完成（Phase 0 + Phase 1 大部分）
 
@@ -78,6 +80,8 @@ Idea { id, title, createdAt, updatedAt, sections[] }
 - 3～4 和弦調性推論（可手動鎖定）、級數、功能標記
 - 逐弦聲部動向與半音線條偵測
 - 三種情緒的銜接建議（附 Tab 與試聽），可輸入旋律落音避免半音摩擦
+- 貼上和弦進行（例如 AI 的寫歌建議）：自動挑出每行的和弦、配上電吉他高把位或一般指法、可換指法、試聽後加進段落或每行建成新段落
+- 試聽音色：鋼弦、尼龍弦、乾淨電吉他（Clean）
 - 副歌音域 → 主歌設計原則，並檢查主歌旋律是否真的留出對比空間
 - JSON 備份：匯出全部或單一靈感，匯入時不覆蓋既有資料（重複略過、內容不同另存為「（匯入）」複本）。
   格式 `{ format: "guitar-idea-pad-backup", version: 1, exportedAt, ideas[] }`，檔名如 `指板靈感本-備份-2026-10-19.json`；

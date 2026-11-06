@@ -6,6 +6,11 @@ import {
   contrastReference,
   createIdea,
   duplicateIdea,
+  duplicateSection,
+  linkedSections,
+  moveSectionTo,
+  songLength,
+  unlinkSection,
   melodyRange,
   migrateLegacyV1,
   moveSection,
@@ -80,7 +85,7 @@ describe('normalizeIdea / migration', () => {
         'bad',
       ],
     })!;
-    expect(fixed.title).toBe('未命名靈感');
+    expect(fixed.title).toBe('未命名歌曲');
     expect(fixed.sections).toHaveLength(1);
     expect(fixed.sections[0]!.label).toBe('verse');
     expect(fixed.sections[0]!.progression.map((p) => p.frets)).toEqual([[null, 3, 2, 0, 1, 0]]);
@@ -141,5 +146,63 @@ describe('section analysis & contrast', () => {
     expect(g.range).toBeUndefined();
     expect(g.harmony.length).toBeGreaterThan(0);
     expect(g.rhythm.length).toBeGreaterThan(0);
+  });
+});
+
+describe('linked sections', () => {
+  const withChorus = () => {
+    let idea = addSection(createIdea(), 'chorus').idea;
+    const chorus = idea.sections[1]!;
+    idea = updateSection(idea, chorus.id, { progression: [item(FMAJ7)], bpm: 100 });
+    return { idea, chorus: idea.sections[1]! };
+  };
+
+  it('repeats a section right after it, and edits flow to every linked copy', () => {
+    const { idea, chorus } = withChorus();
+    const r = duplicateSection(idea, chorus.id, true)!;
+    expect(r.idea.sections.map((s) => s.label)).toEqual(['verse', 'chorus', 'chorus']);
+    expect(linkedSections(r.idea, chorus.id).map((s) => s.id)).toEqual([chorus.id, r.section.id]);
+
+    const edited = updateSection(r.idea, r.section.id, { progression: [item(FM7), item(EM7)], label: 'outro' });
+    const [, a, b] = edited.sections;
+    expect(a!.progression.map((p) => p.frets)).toEqual([FM7, EM7]);
+    expect(b!.progression.map((p) => p.frets)).toEqual([FM7, EM7]);
+    expect(a!.label).toBe('outro');
+    expect(edited.sections[0]!.progression).toEqual([]); // 沒連動的不受影響
+  });
+
+  it('makes an independent copy when not linked', () => {
+    const { idea, chorus } = withChorus();
+    const r = duplicateSection(idea, chorus.id, false)!;
+    expect(r.section.link).toBeUndefined();
+    expect(r.section.progression[0]!.id).not.toBe(chorus.progression[0]!.id);
+    const edited = updateSection(r.idea, r.section.id, { progression: [] });
+    expect(edited.sections[1]!.progression).toHaveLength(1);
+  });
+
+  it('unlinks, and drops a link once only one section is left in it', () => {
+    const { idea, chorus } = withChorus();
+    let r = duplicateSection(idea, chorus.id, true)!;
+    r = duplicateSection(r.idea, chorus.id, true)!;
+    expect(linkedSections(r.idea, chorus.id)).toHaveLength(3);
+    const un = unlinkSection(r.idea, r.section.id);
+    expect(linkedSections(un, chorus.id)).toHaveLength(2);
+    expect(un.sections.find((s) => s.id === r.section.id)!.link).toBeUndefined();
+    const removed = removeSection(un, chorus.id);
+    expect(removed.sections.every((s) => s.link === undefined)).toBe(true);
+  });
+
+  it('keeps links through save and load', () => {
+    const { idea, chorus } = withChorus();
+    const r = duplicateSection(idea, chorus.id, true)!;
+    const loaded = normalizeIdea(JSON.parse(JSON.stringify(r.idea)))!;
+    expect(linkedSections(loaded, chorus.id)).toHaveLength(2);
+  });
+
+  it('moves a section to any position and measures the song', () => {
+    const { idea, chorus } = withChorus();
+    const moved = moveSectionTo(idea, chorus.id, 0);
+    expect(moved.sections[0]!.id).toBe(chorus.id);
+    expect(songLength(idea)).toEqual({ beats: 4, seconds: 2.4 });
   });
 });

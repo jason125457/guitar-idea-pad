@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MAX_FRET, type Fret } from '../core';
+import { MAX_FRET, type Finger, type Fret } from '../core';
 
 const ROWS = 5;
 const MAX_START = MAX_FRET - ROWS + 1;
@@ -9,10 +9,12 @@ const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 interface Props {
   frets: Fret[];
   onChange: (next: Fret[]) => void;
+  /** 建議手指，顯示在按住的點上（1 食指～4 小指、T 拇指） */
+  fingers?: Finger[];
 }
 
 /** 直式和弦圖：六條弦由左到右＝六弦到一弦（與文字輸入順序一致）。 */
-export function Fretboard({ frets, onChange }: Props) {
+export function Fretboard({ frets, onChange, fingers }: Props) {
   const [start, setStart] = useState(1);
   // 這次的指法變化是不是使用者直接在指板上點出來的：是的話不要移動視窗（他正看著這一段）
   const fromBoard = useRef(false);
@@ -74,7 +76,9 @@ export function Fretboard({ frets, onChange }: Props) {
                   aria-label={`${STRING_LABELS[s]} 第 ${fret} 品`}
                   onClick={() => set(s, on ? null : fret)}
                 >
-                  <span className={`fb-dot ${on ? 'on' : ''}`} aria-hidden="true" />
+                  <span className={`fb-dot ${on ? 'on' : ''}`} aria-hidden="true">
+                    {on && fingers?.[s] ? fingers[s] : null}
+                  </span>
                 </button>
               );
             })}

@@ -79,8 +79,7 @@ export function HarmonizePanel({ timed, hasMelodyText, keyLock, hasChords, onLoc
 
   if (!timed || timed.length < 3 || !key || !result) {
     return (
-      <section className="panel" aria-labelledby="h-harm">
-        <h2 id="h-harm">6 · 旋律配和弦</h2>
+      <div className="fold-body">
         <p className="help">
           {hasMelodyText && !timed
             ? '這段旋律是手動輸入的，沒有節奏資料，不知道哪幾個音屬於同一個和弦。請用上面的「哼唱錄入旋律」重新錄，並選「取代原旋律」。'
@@ -88,7 +87,7 @@ export function HarmonizePanel({ timed, hasMelodyText, keyLock, hasChords, onLoc
               ? '至少要有 3 個音才能配和弦。'
               : '用上面的「哼唱錄入旋律」哼一段旋律，這裡會依你哼的節奏，幫你每小節配上和弦。'}
         </p>
-      </section>
+      </div>
     );
   }
 
@@ -137,8 +136,7 @@ export function HarmonizePanel({ timed, hasMelodyText, keyLock, hasChords, onLoc
   );
 
   return (
-    <section className="panel" aria-labelledby="h-harm">
-      <h2 id="h-harm">6 · 旋律配和弦</h2>
+    <div className="fold-body">
       <p className="help">
         依你哼的節奏把旋律切成小節，每小節挑出最能撐住旋律音的和弦，再讓整串和弦走得順。速度是從你的節奏估計的，不準請直接改。
       </p>
@@ -220,6 +218,6 @@ export function HarmonizePanel({ timed, hasMelodyText, keyLock, hasChords, onLoc
         )}
       </div>
       {adopted && <p className="notice" role="status">{adopted}，往上看第 2 區。</p>}
-    </section>
+    </div>
   );
 }

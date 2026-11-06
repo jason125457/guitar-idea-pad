@@ -9,13 +9,15 @@ import { parseMelodyText } from './structure';
 
 export const SCHEMA_VERSION = 2;
 
-export type SectionLabel = 'intro' | 'verse' | 'prechorus' | 'chorus' | 'bridge' | 'outro';
+export type SectionLabel = 'intro' | 'verse' | 'prechorus' | 'chorus' | 'interlude' | 'solo' | 'bridge' | 'outro';
 
 export const SECTION_LABELS: { id: SectionLabel; name: string }[] = [
   { id: 'intro', name: '前奏' },
   { id: 'verse', name: '主歌' },
   { id: 'prechorus', name: '預副歌' },
   { id: 'chorus', name: '副歌' },
+  { id: 'interlude', name: '間奏' },
+  { id: 'solo', name: 'Solo' },
   { id: 'bridge', name: '橋段' },
   { id: 'outro', name: '尾奏' },
 ];
@@ -81,7 +83,15 @@ export interface Section {
   melodyTimed?: TimedNote[];
   /** 播放速度（每分鐘拍數）；未設定時為 DEFAULT_BPM */
   bpm?: number;
+  /**
+   * 連動群組：同一首歌裡 link 相同的段落是同一段音樂重複出現（例如副歌 1、副歌 2），
+   * 改其中一個，和弦、旋律、速度、調性與段落類型會一起改。
+   */
+  link?: string;
 }
+
+/** 連動段落之間共用的內容。 */
+const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm'] as const;
 
 /** 旋律文字與時間資料音高完全對得上才回傳；否則代表旋律被手動改過，時間資料不可信。 */
 export function timedMelodyOf(section: Pick<Section, 'melody' | 'melodyTimed'>): TimedNote[] | undefined {
@@ -140,7 +150,7 @@ export function createSection(label: SectionLabel = 'verse'): Section {
   return { id: newId('s'), label, progression: [], keyLock: null, melody: '' };
 }
 
-export function createIdea(title = '未命名靈感', now = Date.now()): Idea {
+export function createIdea(title = '未命名歌曲', now = Date.now()): Idea {
   return {
     schema: SCHEMA_VERSION,
     id: newId('i'),
@@ -158,17 +168,91 @@ export function addSection(idea: Idea, label: SectionLabel): { idea: Idea; secti
   return { idea: touch({ ...idea, sections: [...idea.sections, section] }), section };
 }
 
+/** 連動群組只剩一個段落時，就不算連動了。 */
+function dropLonelyLinks(sections: Section[]): Section[] {
+  const count = new Map<string, number>();
+  for (const s of sections) if (s.link) count.set(s.link, (count.get(s.link) ?? 0) + 1);
+  return sections.map((s) => {
+    if (!s.link || (count.get(s.link) ?? 0) > 1) return s;
+    const { link: _drop, ...rest } = s;
+    return rest;
+  });
+}
+
 /** 至少保留一個段落。 */
 export function removeSection(idea: Idea, sectionId: string): Idea {
   if (idea.sections.length <= 1) return idea;
-  return touch({ ...idea, sections: idea.sections.filter((s) => s.id !== sectionId) });
+  return touch({ ...idea, sections: dropLonelyLinks(idea.sections.filter((s) => s.id !== sectionId)) });
 }
 
+/** 和這個段落連動的所有段落（含自己）；沒有連動時只有自己。 */
+export function linkedSections(idea: Idea, sectionId: string): Section[] {
+  const s = idea.sections.find((x) => x.id === sectionId);
+  if (!s) return [];
+  return s.link ? idea.sections.filter((x) => x.link === s.link) : [s];
+}
+
+/** 修改段落；共用的內容（和弦、旋律等）會同步到所有連動的段落。 */
 export function updateSection(idea: Idea, sectionId: string, patch: Partial<Omit<Section, 'id'>>): Idea {
+  const target = idea.sections.find((s) => s.id === sectionId);
+  const shared: Partial<Section> = {};
+  for (const k of SHARED_KEYS) if (k in patch) (shared as Record<string, unknown>)[k] = patch[k];
   return touch({
     ...idea,
-    sections: idea.sections.map((s) => (s.id === sectionId ? { ...s, ...patch } : s)),
+    sections: idea.sections.map((s) => {
+      if (s.id === sectionId) return { ...s, ...patch };
+      if (target?.link && s.link === target.link) return { ...s, ...shared };
+      return s;
+    }),
   });
+}
+
+/**
+ * 重複一個段落，插在它後面。linked = true 時兩者連動（改一個另一個跟著變）；
+ * false 時是獨立的複本。
+ */
+export function duplicateSection(idea: Idea, sectionId: string, linked: boolean): { idea: Idea; section: Section } | undefined {
+  const i = idea.sections.findIndex((s) => s.id === sectionId);
+  const src = idea.sections[i];
+  if (!src) return undefined;
+  const link = linked ? (src.link ?? newId('l')) : undefined;
+  const { link: _old, ...content } = src;
+  const copy: Section = {
+    ...content,
+    id: newId('s'),
+    progression: src.progression.map((p) => ({ ...p, id: newId('c'), frets: [...p.frets] })),
+    ...(src.melodyTimed ? { melodyTimed: src.melodyTimed.map((n) => ({ ...n })) } : {}),
+    ...(link ? { link } : {}),
+  };
+  const sections = [...idea.sections];
+  if (link) sections[i] = { ...src, link };
+  sections.splice(i + 1, 0, copy);
+  return { idea: touch({ ...idea, sections: dropLonelyLinks(sections) }), section: copy };
+}
+
+/** 取消連動：這個段落保留目前內容，之後各改各的。 */
+export function unlinkSection(idea: Idea, sectionId: string): Idea {
+  return touch({
+    ...idea,
+    sections: dropLonelyLinks(
+      idea.sections.map((s) => {
+        if (s.id !== sectionId) return s;
+        const { link: _drop, ...rest } = s;
+        return rest;
+      }),
+    ),
+  });
+}
+
+/** 把段落移到第 to 個位置（拖曳排序用）。 */
+export function moveSectionTo(idea: Idea, sectionId: string, to: number): Idea {
+  const i = idea.sections.findIndex((s) => s.id === sectionId);
+  const j = Math.max(0, Math.min(idea.sections.length - 1, to));
+  if (i < 0 || i === j) return idea;
+  const next = [...idea.sections];
+  const [s] = next.splice(i, 1);
+  next.splice(j, 0, s as Section);
+  return touch({ ...idea, sections: next });
 }
 
 export function moveSection(idea: Idea, sectionId: string, dir: -1 | 1): Idea {
@@ -193,6 +277,18 @@ export function duplicateIdea(idea: Idea, now = Date.now()): Idea {
       progression: s.progression.map((p) => ({ ...p, id: newId('c'), frets: [...p.frets] })),
     })),
   };
+}
+
+/** 整首歌的總拍數與長度（秒）；每個段落用自己的速度。 */
+export function songLength(idea: Pick<Idea, 'sections'>): { beats: number; seconds: number } {
+  let beats = 0;
+  let seconds = 0;
+  for (const s of idea.sections) {
+    const b = s.progression.reduce((n, p) => n + beatsOf(p), 0);
+    beats += b;
+    seconds += (b * 60) / bpmOf(s);
+  }
+  return { beats, seconds };
 }
 
 /** 段落顯示名稱：同類型有多個時加編號（主歌 1、主歌 2）。 */
@@ -275,6 +371,7 @@ function normalizeSection(x: unknown): Section | undefined {
   const timed = normalizeTimed(o.melodyTimed);
   if (timed) section.melodyTimed = timed;
   if (validBpm(o.bpm)) section.bpm = Math.round(o.bpm);
+  if (typeof o.link === 'string' && o.link) section.link = o.link;
   return section;
 }
 
@@ -306,10 +403,10 @@ export function normalizeIdea(x: unknown): Idea | undefined {
   return {
     schema: SCHEMA_VERSION,
     id: o.id,
-    title: typeof o.title === 'string' && o.title.trim() ? o.title : '未命名靈感',
+    title: typeof o.title === 'string' && o.title.trim() ? o.title : '未命名歌曲',
     createdAt: typeof o.createdAt === 'number' ? o.createdAt : now,
     updatedAt: typeof o.updatedAt === 'number' ? o.updatedAt : now,
-    sections: sections.length ? sections : [createSection('verse')],
+    sections: sections.length ? dropLonelyLinks(sections) : [createSection('verse')],
   };
 }
 

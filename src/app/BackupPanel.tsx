@@ -91,12 +91,12 @@ export function BackupPanel({ ideas, current, onImport }: Props) {
     } catch {
       /* 忽略 */
     }
-    setNotice({ kind: 'ok', text: `已下載 ${list.length} 個靈感的備份檔，請收好這個檔案（雲端硬碟或寄給自己都可以）` });
+    setNotice({ kind: 'ok', text: `已下載 ${list.length} 首歌的備份檔，請收好這個檔案（雲端硬碟或寄給自己都可以）` });
   };
 
   const doImport = async (file: File) => {
     if (file.size > MAX_BACKUP_BYTES) {
-      setNotice({ kind: 'err', text: '檔案太大，不像是靈感備份檔' });
+      setNotice({ kind: 'err', text: '檔案太大，不像是這個工具的備份檔' });
       return;
     }
     let text: string;
@@ -115,23 +115,23 @@ export function BackupPanel({ ideas, current, onImport }: Props) {
     onImport(plan.add);
     const added = plan.add.length - plan.copied;
     const parts = [`新增 ${added} 個`];
-    if (plan.copied) parts.push(`${plan.copied} 個與本機的同一個靈感內容不同，已另存為「（匯入）」複本`);
+    if (plan.copied) parts.push(`${plan.copied} 個與本機的同一首歌內容不同，已另存為「（匯入）」複本`);
     if (plan.identical) parts.push(`${plan.identical} 個已經在本機，略過`);
     if (r.skipped) parts.push(`${r.skipped} 個資料損壞，無法匯入`);
     setNotice({
       kind: plan.add.length === 0 && r.skipped > 0 ? 'err' : 'ok',
-      text: plan.add.length === 0 && !r.skipped ? '備份檔裡的靈感都已經在本機了，沒有需要匯入的' : `匯入完成：${parts.join('；')}`,
+      text: plan.add.length === 0 && !r.skipped ? '備份檔裡的歌都已經在本機了，沒有需要匯入的' : `匯入完成：${parts.join('；')}`,
     });
   };
 
   return (
-    <details className="backup panel">
+    <details className="backup panel fold">
       <summary>
         備份與還原
         {reminder && <span className="backup-due">{reminder}</span>}
       </summary>
       <p className="help">
-        靈感只存在這台裝置的瀏覽器裡。清除網站資料、換手機或換瀏覽器前，請先匯出備份檔。
+        你的歌只存在這台裝置的瀏覽器裡。清除網站資料、換手機或換瀏覽器前，請先匯出備份檔。
       </p>
       <div className="row wrap">
         <button type="button" className="btn btn-primary" onClick={() => doExport('all')}>
@@ -167,7 +167,7 @@ export function BackupPanel({ ideas, current, onImport }: Props) {
           {notice.text}
         </p>
       )}
-      <p className="help">匯入不會覆蓋任何現有靈感：重複的會略過，內容不同的會另存成複本。</p>
+      <p className="help">匯入不會覆蓋任何現有的歌：重複的會略過，內容不同的會另存成複本。</p>
     </details>
   );
 }

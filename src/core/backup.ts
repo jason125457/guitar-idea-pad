@@ -100,6 +100,6 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export function backupFileName(date: Date, title?: string): string {
   const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   if (title === undefined) return `指板靈感本-備份-${day}.json`;
-  const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 40) || '未命名靈感';
+  const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 40) || '未命名歌曲';
   return `指板靈感本-${safe}-${day}.json`;
 }

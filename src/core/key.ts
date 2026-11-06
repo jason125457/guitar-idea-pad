@@ -168,3 +168,14 @@ export function inferKey(chords: ChordRef[], topN = 3): KeyGuess[] {
 export function analyzeProgression(chords: ChordRef[], key: Pick<KeyGuess, 'tonic' | 'mode'>): ChordFunctionInfo[] {
   return chords.map((c) => classifyChord(c, key.tonic, key.mode));
 }
+
+const MAJOR_TRIADS = ['maj', 'min', 'min', 'maj', 'maj', 'min', 'dim'];
+const MAJOR_SEVENTHS = ['maj7', 'm7', 'm7', 'maj7', '7', 'm7', 'm7b5'];
+const MINOR_TRIADS = ['min', 'dim', 'maj', 'min', 'min', 'maj', 'maj'];
+const MINOR_SEVENTHS = ['m7', 'm7b5', 'maj7', 'm7', 'm7', 'maj7', '7'];
+
+/** 調內七個順階和弦（三和弦或七和弦），給和弦盤用；小調取自然小調。 */
+export function diatonicChords(key: Pick<KeyGuess, 'tonic' | 'mode'>, sevenths = false): ChordRef[] {
+  const ids = key.mode === 'major' ? (sevenths ? MAJOR_SEVENTHS : MAJOR_TRIADS) : sevenths ? MINOR_SEVENTHS : MINOR_TRIADS;
+  return scalePcsForKey(key).map((pc, i) => ({ rootPc: pc, qualityId: ids[i] as string, bassPc: pc }));
+}

@@ -1,6 +1,6 @@
 # 吉他取樣授權
 
-`FluidR3_GM/acoustic_guitar_steel-mp3.js` 與 `FluidR3_GM/acoustic_guitar_nylon-mp3.js`
+`FluidR3_GM/acoustic_guitar_steel-mp3.js`、`FluidR3_GM/acoustic_guitar_nylon-mp3.js` 與 `FluidR3_GM/electric_guitar_clean-mp3.js`
 取自 FluidR3_GM 音色庫（Frank Wen），由 [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts)
 轉為網頁可用的格式（每個音一段 base64 mp3）。
 
