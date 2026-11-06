@@ -5,7 +5,7 @@
  */
 import { chordPcs, type ChordRef } from './chord';
 import { diatonicChords, scalePcsForKey, type KeyGuess } from './key';
-import { mod12 } from './pitch';
+import { mod12, parseNoteName } from './pitch';
 import { quality } from './qualities';
 
 /** 對齊在段落拍點上的旋律音：beat 是從段落開頭算的第幾拍。 */
@@ -174,5 +174,49 @@ export function harmonizeBars(
     out.push(pick);
     last = pick;
   }
+  return out;
+}
+
+const NOTE_TOKEN = /^[A-Ga-g][#b♯♭]?-?\d$/;
+
+/**
+ * 看起來是一串旋律音（音名＋八度，例如「Eb3 B2 E3 F#3」）就轉成旋律，每個音 beatsEach 拍；
+ * 不是的話回傳 undefined。B2、C4 這種寫法同時也能讀成和弦（Bsus2），所以至少要兩個音、而且大多數都帶八度數字。
+ */
+export function melodyFromNoteText(text: string, beatsEach = 1): BeatNote[] | undefined {
+  const tokens = text
+    .split(/[\s,，、|→>\-–—]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (tokens.length < 2) return undefined;
+  const notes = tokens.filter((t) => NOTE_TOKEN.test(t.normalize('NFKC')));
+  if (notes.length < Math.max(2, Math.ceil(tokens.length * 0.6))) return undefined;
+  const out: BeatNote[] = [];
+  for (const t of notes) {
+    const midi = parseNoteName(t);
+    if (midi === undefined || midi < 0 || midi > 127) continue;
+    out.push({ midi, beat: out.length * beatsEach, beats: beatsEach });
+  }
+  return out.length >= 2 ? out : undefined;
+}
+
+/** 錄到的音為什麼可疑（給使用者確認時看） */
+export type SuspectReason = 'out-of-key' | 'blip' | 'octave' | 'range';
+
+/**
+ * 找出可能抓錯的音：調外音、跟前一個音只差半音而且很短（多半是滑音或抖動）、
+ * 跟前後兩個音都差一個八度以上（八度誤判）、低到或高到不像在唱歌。
+ */
+export function suspiciousNotes(notes: readonly BeatNote[], key?: Pick<KeyGuess, 'tonic' | 'mode'>): Map<number, SuspectReason> {
+  const out = new Map<number, SuspectReason>();
+  const scale = key ? new Set(scalePcsForKey(key)) : undefined;
+  notes.forEach((n, i) => {
+    const prev = notes[i - 1];
+    const next = notes[i + 1];
+    if (n.midi < 40 || n.midi > 84) out.set(i, 'range');
+    else if (prev && next && Math.abs(n.midi - prev.midi) >= 12 && Math.abs(n.midi - next.midi) >= 12) out.set(i, 'octave');
+    else if (n.beats <= 0.5 && ((prev && Math.abs(n.midi - prev.midi) === 1) || (next && Math.abs(n.midi - next.midi) === 1))) out.set(i, 'blip');
+    else if (scale && !scale.has(mod12(n.midi))) out.set(i, 'out-of-key');
+  });
   return out;
 }

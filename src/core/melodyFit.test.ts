@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody } from './index';
+import { checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
 
 const C = parseChordSymbol('C')!;
 const FMAJ7 = parseChordSymbol('Fmaj7')!;
@@ -69,5 +69,38 @@ describe('harmonizeBars', () => {
     expect(bars[0]).toMatch(/^(C|Em|Am)/);
     expect(['F', 'Dm', 'Fmaj7', 'Dm7']).toContain(bars[1]);
     expect(bars[2]).toBe(bars[1]); // 第三小節沒唱：沿用
+  });
+});
+
+describe('melodyFromNoteText', () => {
+  it('reads a list of note names as a melody, one beat each', () => {
+    expect(melodyFromNoteText('Eb3 B2 E3 F#3 Bb2')).toEqual([
+      { midi: 51, beat: 0, beats: 1 },
+      { midi: 47, beat: 1, beats: 1 },
+      { midi: 52, beat: 2, beats: 1 },
+      { midi: 54, beat: 3, beats: 1 },
+      { midi: 46, beat: 4, beats: 1 },
+    ]);
+  });
+  it('leaves chord lists and single names alone', () => {
+    expect(melodyFromNoteText('Am7 → Em7 → Fmaj7 → G')).toBeUndefined();
+    expect(melodyFromNoteText('B2')).toBeUndefined();
+    expect(melodyFromNoteText('C G Am F')).toBeUndefined();
+  });
+});
+
+describe('suspiciousNotes', () => {
+  it('flags octave jumps, short half-step blips, out-of-key and out-of-range notes', () => {
+    const notes = [
+      { midi: 60, beat: 0, beats: 1 },
+      { midi: 72 + 12, beat: 1, beats: 1 }, // 前後都差兩個八度
+      { midi: 62, beat: 2, beats: 1 },
+      { midi: 63, beat: 3, beats: 0.5 }, // 半音、很短
+      { midi: 66, beat: 3.5, beats: 1 }, // F# 不在 C 大調
+      { midi: 30, beat: 5, beats: 1 }, // 太低
+    ];
+    const s = suspiciousNotes(notes, KEY_C);
+    expect([...s.entries()]).toEqual([[1, 'octave'], [3, 'blip'], [4, 'out-of-key'], [5, 'range']]);
+    expect(suspiciousNotes([{ midi: 64, beat: 0, beats: 1 }, { midi: 67, beat: 1, beats: 1 }], KEY_C).size).toBe(0);
   });
 });

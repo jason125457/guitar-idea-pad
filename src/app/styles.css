@@ -742,3 +742,26 @@ main { display: grid; gap: var(--s5); }
 .more-tools { border: 1px dashed var(--border); border-radius: var(--radius); padding: 0 var(--s4); }
 .more-tools > summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 14px; }
 .more-tools[open] { padding-bottom: var(--s4); }
+
+/* 唱旋律：音準指示、確認錄到的音、直接打音名 */
+.tuner { width: 100%; display: grid; gap: var(--s1); justify-items: center; }
+.tuner-scale { position: relative; width: 100%; height: 10px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); }
+.tuner-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--ok); transform: translateX(-50%); }
+.tuner-needle { position: absolute; top: -4px; width: 4px; height: 16px; border-radius: 2px; background: var(--accent); transform: translateX(-50%); transition: left 80ms linear; }
+.tuner-text { font-size: 13px; color: var(--muted); }
+.tuner-text.is-ok { color: var(--ok); }
+.review { display: grid; gap: var(--s2); }
+.review .shapes-title { margin: 0; }
+.review-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s1); }
+.rnote {
+  display: grid; justify-items: center; min-width: 56px; min-height: 48px; padding: 4px var(--s2); border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); font-family: var(--mono); font-weight: 600; font-size: 15px;
+}
+.rnote small { font-family: Poppins, sans-serif; font-weight: 400; font-size: 11px; color: var(--muted); }
+.rnote.is-sus { border-style: dashed; border-color: var(--danger); }
+.rnote.is-on { border: 2px solid var(--accent); }
+.review-tools, .review-actions { display: flex; flex-wrap: wrap; gap: var(--s1); align-items: center; }
+.review-tools .help { flex-basis: 100%; margin: 0; }
+.sing-typed { margin-top: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--border); }
+.sing-typed .field { margin-bottom: var(--s1); }
+.sing-typed .help { margin-top: var(--s1) !important; }

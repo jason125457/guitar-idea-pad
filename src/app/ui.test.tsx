@@ -251,6 +251,32 @@ describe('App', () => {
     expect([...document.querySelectorAll('.tl .chip-roman')].map((e) => e.textContent).slice(0, 3)).toEqual(['IVmaj7', 'ivm7', 'iiim7']);
   });
 
+  it('treats a list of note names in the chord box as a melody and fills chords from it', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    tab('打字／貼上');
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Eb3 B2 E3 F#3 Bb2' } });
+    // 以前會把 B2、Bb2 讀成 Bsus2、Bbsus2
+    expect(document.querySelector('#chord-search-help')?.textContent).toContain('不是和弦名稱');
+    fireEvent.click(screen.getByRole('button', { name: '當旋律，幫我配和弦' }));
+    // 五個音、每個一拍 → 兩小節，各配一個和弦；旋律畫在和弦上面
+    await waitFor(() => expect(chipNames()).toHaveLength(2));
+    expect(chipNames().some((n) => /sus2/.test(n ?? ''))).toBe(false);
+    expect(document.querySelectorAll('.tl-note').length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('takes typed note names in the sing panel', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.click(screen.getByRole('button', { name: '唱旋律' }));
+    fireEvent.change(screen.getByLabelText('或直接打音名'), { target: { value: 'E4 G4 A4 C5' } });
+    fireEvent.click(screen.getByRole('button', { name: '用這些音' }));
+    await waitFor(() => expect(document.querySelectorAll('.tl-note').length).toBe(4));
+    expect(screen.getByText(/已用 4 個音當旋律/)).toBeTruthy();
+  });
+
   it('lets you sing before there are any chords', async () => {
     render(<App />);
     await ready();

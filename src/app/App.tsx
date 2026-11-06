@@ -29,7 +29,6 @@ import {
   fretsToNotes,
   labelName,
   melodyRange,
-  mergeMelody,
   midiName,
   midisOf,
   newId,
@@ -39,7 +38,6 @@ import {
   sectionNames,
   spellerForKey,
   STANDARD_TUNING,
-  timedMelodyOf,
   transition,
   updateSection,
   verseGuidance,
@@ -63,8 +61,6 @@ import { ChordImportPanel } from './ChordImportPanel';
 import { ChordInspector } from './ChordInspector';
 import { ChordPalette, type PaletteTab } from './ChordPalette';
 import { SectionMenu } from './SectionMenu';
-import { HarmonizePanel } from './HarmonizePanel';
-import { HumRecorder } from './HumRecorder';
 import { SongSidebar, formatDuration } from './SongSidebar';
 import { SingAlong } from './SingAlong';
 import { SongSheet } from './SongSheet';
@@ -255,7 +251,6 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const chromatic = useMemo(() => findChromaticLines(sequence), [sequence]);
 
   const melody = useMemo(() => parseMelodyText(section.melody), [section.melody]);
-  const timed = useMemo(() => timedMelodyOf(section), [section]);
   const lastMelody = melody.midis[melody.midis.length - 1];
   // 建議卡片用延後的值：打字時先更新輸入框，建議在空檔再重算
   const deferredLastMelody = useDeferredValue(lastMelody);
@@ -509,7 +504,6 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     : `會加在${sectionName}的最後`;
 
   // 旋律文字被手動改過、和錄音時的節奏對不上（節奏資料還在，只是暫時不能用）
-  const timingBroken = !!section.melodyTimed?.length && !timed;
   const showContrastHint = !ref && (section.label === 'verse' || section.label === 'prechorus');
 
   // ── 右邊工具欄、旋律的幾次錄音、只有旋律還沒配和弦的小節 ──
@@ -538,9 +532,9 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const silentPlan = (n: number): PlanItem[] =>
     Array.from({ length: n }, (_, i) => ({ sectionId: section.id, itemId: `bar-${i}`, midis: [], beats: 4, beatSec: 60 / bpm, pattern: 'beat', sectionBeat: i * 4 }));
   const recordPlan = () => (items.length ? planOf(section) : silentPlan(singBars));
-  const hearTake = (id: string) => {
-    const t = takes.find((x) => x.id === id);
-    const notes = t?.notes ?? grid;
+  const hearTake = (id: string) => hearNotes(takes.find((x) => x.id === id)?.notes ?? grid);
+  /** 把一串對齊拍點的音跟這段的和弦一起播（沒有和弦就只放旋律） */
+  const hearNotes = (notes: readonly BeatNote[]) => {
     const beatSec = 60 / bpm;
     const n = Math.max(1, Math.ceil(notes.reduce((e, x) => Math.max(e, x.beat + x.beats), 0) / 4));
     playback.play(items.length ? planOf(section) : silentPlan(n), {
@@ -548,10 +542,10 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
       melody: notes.map((x) => ({ midi: x.midi, startSec: x.beat * beatSec, durSec: x.beats * beatSec })),
     });
   };
-  /** 依旋律替還沒配和弦的小節配上和弦（每小節一個，四拍） */
-  const fillFromMelody = () => {
-    const k = key ?? inferKeyFromMelody(grid.map((n) => ({ midi: n.midi, durSec: n.beats })))[0] ?? { tonic: 0, mode: 'major' as const };
-    const refsForBars = harmonizeBars(grid, totalBeats, ghostBars, k, analyzed[items.length - 1]?.best);
+  /** 依旋律 g，從第 fromBeat 拍起每小節配一個和弦（四拍），接在現有的和弦後面挑順手的按法 */
+  const chordsForMelodyBars = (g: readonly BeatNote[], fromBeat: number, n: number): ProgressionItem[] => {
+    const k = key ?? inferKeyFromMelody(g.map((x) => ({ midi: x.midi, durSec: x.beats })))[0] ?? { tonic: 0, mode: 'major' as const };
+    const refsForBars = harmonizeBars(g, fromBeat, n, k, analyzed[items.length - 1]?.best);
     let prev = items[items.length - 1]?.frets;
     const added: ProgressionItem[] = [];
     for (const ch of refsForBars) {
@@ -560,9 +554,25 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
       added.push({ id: newId('c'), frets: f, beats: 4 });
       prev = f;
     }
+    return added;
+  };
+  const fillFromMelody = () => {
+    const added = chordsForMelodyBars(grid, totalBeats, ghostBars);
     if (!added.length) return;
     withUndo(`已依旋律配上 ${added.length} 小節的和弦`, { progression: [...items, ...added] });
     setSingOpen(false);
+    setSelId(added[0]?.id ?? null);
+  };
+  /** 在和弦輸入框打了一串旋律音：當成這段的旋律；這段還沒有和弦的話，順便每小節配一個 */
+  const applyTypedMelody = (g: BeatNote[]) => {
+    const { takes: next } = addTake(section, g);
+    if (items.length) {
+      withUndo(`已把 ${g.length} 個音當成${sectionName}的旋律`, { ...gridPatch(g), melodyTakes: next });
+      return;
+    }
+    const end = g.reduce((e, x) => Math.max(e, x.beat + x.beats), 0);
+    const added = chordsForMelodyBars(g, 0, Math.max(1, Math.ceil(end / 4)));
+    withUndo(`已把 ${g.length} 個音當成旋律，並配上 ${added.length} 小節的和弦`, { ...gridPatch(g), melodyTakes: next, progression: added });
     setSelId(added[0]?.id ?? null);
   };
   const playNow = () => (scope === 'song' ? playSong() : playSection());
@@ -789,7 +799,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
         </section>
 
         <details className="more-tools">
-          <summary>更多工具：聲部動向、用文字輸入旋律、舊版旋律配和弦</summary>
+          <summary>更多工具：聲部動向、主歌與副歌的對比</summary>
           <div className="more">
 
           <details className="panel fold">
@@ -831,51 +841,14 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
           </details>
 
           <details className="panel fold">
-            <summary>旋律、哼唱錄音與段落對比</summary>
-            <label className="field" htmlFor="melody">
-              {sectionName}旋律出現的音（空格分開）
-            </label>
-            <input
-              id="melody"
-              className="input mono"
-              placeholder="A3 B3 D4 E4 G4 A4 C5"
-              value={section.melody}
-              onChange={(e) => patch({ melody: e.target.value })}
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={melody.invalid.length > 0}
-              aria-describedby="melody-help"
-            />
-            <p id="melody-help" className={melody.invalid.length ? 'help err' : 'help'} role={melody.invalid.length ? 'alert' : undefined}>
-              {melody.invalid.length
-                ? `看不懂：${melody.invalid.join('、')}。請用 A3、Bb3、F#4 這種寫法`
-                : myRange
-                  ? `音域 ${midiName(myRange.low, speller)}–${midiName(myRange.high, speller)}，中心音約 ${midiName(myRange.median, speller)}`
-                  : '音名加八度，例如 A3、Bb3、F#4；最後一個音會用來挑選下一步建議'}
-            </p>
-
-            {timingBroken && (
-              <div className="notice warn-notice" role="status">
-                <p>旋律被改過，和錄音時記下的節奏對不上，所以暫時不能拿來「配和弦」。錄音的版本還保留著。</p>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => withUndo('已還原成錄音時的旋律', { melody: notesToMelodyText(section.melodyTimed ?? [], speller) })}
-                >
-                  還原成錄音的旋律
-                </button>
-              </div>
+            <summary>主歌與副歌的對比</summary>
+            {myRange ? (
+              <p className="help">
+                {sectionName}旋律的音域 {midiName(myRange.low, speller)}–{midiName(myRange.high, speller)}，中心音約 {midiName(myRange.median, speller)}。
+              </p>
+            ) : (
+              <p className="help">按「唱旋律」把{sectionName}的旋律唱下來，這裡就會比較主歌和副歌的音域。</p>
             )}
-
-            <HumRecorder
-              keyInfo={key}
-              speller={speller}
-              hasMelody={section.melody.trim().length > 0}
-              hasTiming={!!timed}
-              onAppend={(t, added) => patch(mergeMelody(section, added, t, 'append'))}
-              onReplace={(t, added) => withUndo('已用新錄的旋律取代原本的旋律', mergeMelody(section, added, t, 'replace'))}
-            />
-
             {refView && (
               <div className="guide">
                 <h3>以「{refView.name}」為對比</h3>
@@ -886,7 +859,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                     別碰{refView.name}的最高音，它要留給{refView.name}。
                   </p>
                 ) : (
-                  <p>{refView.name}還沒有填旋律音，填了之後這裡會給出具體的音域範圍。</p>
+                  <p>{refView.name}還沒有旋律，唱下來之後這裡會給出具體的音域範圍。</p>
                 )}
                 {refView.range && myRange && (
                   <ul className="checks" aria-label="與副歌的對比檢查">
@@ -906,30 +879,11 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               </div>
             )}
             {showContrastHint && (
-              <p className="help">這首歌還沒有內容完整的副歌。新增一個「副歌」段落並填入和弦或旋律，這裡就會出現主歌的對比建議。</p>
+              <p className="help">這首歌還沒有內容完整的副歌。新增一個「副歌」段落並加上和弦或旋律，這裡就會出現主歌的對比建議。</p>
             )}
             {section.label === 'chorus' && (
-              <p className="help">副歌的和弦與旋律音會成為「{labelName('verse')}」的對比基準；切到主歌段落就能看到建議。</p>
+              <p className="help">副歌的和弦與旋律會成為「{labelName('verse')}」的對比基準；切到主歌段落就能看到建議。</p>
             )}
-          </details>
-
-          <details className="panel fold">
-            <summary>旋律配和弦（用錄下的旋律自動配）</summary>
-            <HarmonizePanel
-              timed={timed}
-              hasMelodyText={section.melody.trim().length > 0}
-              keyLock={locked}
-              hasChords={items.length > 0}
-              onLockKey={(k) => patch({ keyLock: k })}
-              onAdopt={(adopted, mode, harmonizeBpm) => {
-                const added = adopted.map((a) => ({ id: newId('c'), frets: [...a.frets], beats: a.beats }));
-                // 段落原本是空的才沿用配和弦時的速度，免得改掉使用者已經設好的速度
-                const bpmPatch = items.length === 0 ? { bpm: harmonizeBpm } : {};
-                if (mode === 'replace' && items.length > 0) {
-                  withUndo(`已用 ${added.length} 個新和弦取代原本的 ${items.length} 個`, { progression: added, bpm: harmonizeBpm });
-                } else patch({ progression: [...items, ...added], ...bpmPatch });
-              }}
-            />
           </details>
 
           </div>
@@ -950,6 +904,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               if (t) patch(gridPatch(t.notes));
             }}
             onHearTake={hearTake}
+            onHearNotes={hearNotes}
+            onTyped={applyTypedMelody}
             onClose={() => setSingOpen(false)}
             sectionName={sectionName}
             beatSec={60 / bpm}
@@ -999,6 +955,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             insertHint={insertHint}
             onAddChord={addChord}
             onAddChords={addChords}
+            onMelodyNotes={applyTypedMelody}
             onPasteText={(text) => {
               setPasteSeed((x) => ({ text, n: (x?.n ?? 0) + 1 }));
               setPalTab('type');

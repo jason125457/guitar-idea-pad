@@ -2,10 +2,13 @@ import { useState, type ReactNode, type RefObject } from 'react';
 import {
   chordSymbol,
   diatonicChords,
+  melodyFromNoteText,
+  midiName,
   parseChordSymbol,
   parseProgressionText,
   romanNumeral,
   spellerForKey,
+  type BeatNote,
   type ChordRef,
   type KeyGuess,
   type KeyLock,
@@ -45,6 +48,8 @@ interface Props {
   onAddChords: (chs: ChordRef[]) => void;
   /** 貼了一整段文字：交給「貼上 AI 建議」處理 */
   onPasteText: (text: string) => void;
+  /** 打的是一串旋律音（Eb3 B2 E3…）：當成這段的旋律，並依旋律配和弦 */
+  onMelodyNotes: (notes: BeatNote[]) => void;
   onPlaySuggestion: (s: Suggestion) => void;
   onAddSuggestion: (s: Suggestion) => void;
   searchRef: RefObject<HTMLInputElement>;
@@ -74,18 +79,21 @@ export function ChordPalette(p: Props) {
   const key = p.keyInfo ?? { tonic: 0, mode: 'major' as Mode };
   const keySpeller = p.keyInfo ? p.speller : spellerForKey(0, 'major');
   const text = query.trim();
-  const parsed = text ? parseChordSymbol(text) : undefined;
+  // 先看是不是一串旋律音：B2、Bb2 這種寫法也能讀成和弦（Bsus2），不先擋下來就會變成怪和弦
+  const melodyNotes = text ? melodyFromNoteText(text) : undefined;
+  const parsed = text && !melodyNotes ? parseChordSymbol(text) : undefined;
   // 不是單一和弦時，看看是不是用 →、空格、逗號、頓號串起來的一串和弦
-  const rows = !parsed && text ? parseProgressionText(text) : [];
+  const rows = !parsed && !melodyNotes && text ? parseProgressionText(text) : [];
   const run = rows.length === 1 ? rows[0] : undefined;
   const many = run ? run.tokens.map((t) => t.chord).filter((c): c is ChordRef => c !== undefined) : [];
   const unknown = run ? run.tokens.filter((t) => !t.chord).map((t) => t.text) : [];
   // 一串和弦之外還有很多說明文字（像整段 AI 建議），就交給下面的貼上面板
-  const isParagraph = !parsed && text.length > 0 && (rows.length > 1 || (!!run && !run.likely) || (!run && text.length > 24));
+  const isParagraph = !parsed && !melodyNotes && text.length > 0 && (rows.length > 1 || (!!run && !run.likely) || (!run && text.length > 24));
   const canAdd = !!parsed || (many.length > 0 && !isParagraph);
 
   const submit = () => {
-    if (parsed) p.onAddChord(parsed);
+    if (melodyNotes) p.onMelodyNotes(melodyNotes);
+    else if (parsed) p.onAddChord(parsed);
     else if (isParagraph) return p.onPasteText(query);
     else if (many.length) p.onAddChords(many);
     else return;
@@ -93,6 +101,12 @@ export function ChordPalette(p: Props) {
   };
   const help = (): { text: string; err: boolean } => {
     if (!text) return { text: '可以打一個，也可以一次打一串，例如 Am7 → Em7 → Fmaj7 → G；按 Enter 加入，會自動挑好按的指法', err: false };
+    if (melodyNotes) {
+      return {
+        text: `這是 ${melodyNotes.length} 個旋律音（${melodyNotes.map((n) => midiName(n.midi)).join(' ')}），不是和弦名稱。按右邊的按鈕，會把它們當成這段的旋律（每個音一拍），再幫你配和弦。`,
+        err: false,
+      };
+    }
     if (parsed) return { text: `按 Enter 加入 ${chordSymbol(parsed)}`, err: false };
     if (isParagraph) return { text: '這看起來是一整段建議。按 Enter 或右邊的按鈕，改用「貼上 AI 建議」把每一行的和弦挑出來', err: false };
     if (many.length) {
@@ -259,7 +273,9 @@ export function ChordPalette(p: Props) {
             }}
             aria-describedby="chord-search-help"
           />
-          {isParagraph ? (
+          {melodyNotes ? (
+            <button type="submit" className="btn btn-primary">當旋律，幫我配和弦</button>
+          ) : isParagraph ? (
             <button type="submit" className="btn">改用整段貼上</button>
           ) : (
             <button type="submit" className="btn btn-primary" disabled={!canAdd}>
