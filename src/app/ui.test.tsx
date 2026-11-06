@@ -142,6 +142,24 @@ describe('App', () => {
     expect(chipNames()).toEqual(['C', 'Am', 'Fmaj7']);
   });
 
+  it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
+    render(<App />);
+    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
+    const clear = screen.queryByRole('button', { name: '清空此段' });
+    if (clear) fireEvent.click(clear);
+    const chipNames = () => [...document.querySelectorAll('.tl .chip-name')].map((e) => e.textContent);
+    const search = screen.getByLabelText('直接輸入和弦名稱');
+
+    fireEvent.change(search, { target: { value: 'Cmaj7、Fmaj7' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ 加入 2 個' }));
+    await waitFor(() => expect(chipNames()).toEqual(['Cmaj7', 'Fmaj7']));
+
+    const paragraph = '主歌：Cadd9 → Fmaj7#11\n副歌：C → G/B → Am7 → Fmaj7';
+    fireEvent.paste(search, { clipboardData: { getData: () => paragraph } });
+    await waitFor(() => expect((screen.getByLabelText('和弦進行') as HTMLTextAreaElement).value).toBe(paragraph));
+    expect(document.querySelectorAll('.import-row')).toHaveLength(2);
+  });
+
   it('repeats a section as a linked copy, so editing one changes both', async () => {
     render(<App />);
     await screen.findByLabelText('六弦 → 一弦，x 代表悶音');

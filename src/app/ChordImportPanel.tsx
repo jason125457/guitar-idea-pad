@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { playTimedChords, stopAll, strumBeats } from '../audio/pluck';
 import {
   DEFAULT_BEATS,
@@ -42,10 +42,22 @@ interface Props {
   onPreview: (frets: Fret[]) => void;
   onAddHere: (frets: Fret[][], mode: 'append' | 'replace') => void;
   onAddSections: (rows: ImportRow[]) => void;
+  /** 從和弦名稱輸入框轉過來的一整段文字；n 每次轉交都會變，用來觸發 */
+  seed?: { text: string; n: number };
 }
 
-export function ChordImportPanel({ style, sectionName, hasChords, beatSec, onPreview, onAddHere, onAddSections }: Props) {
+export function ChordImportPanel({ style, sectionName, hasChords, beatSec, onPreview, onAddHere, onAddSections, seed }: Props) {
   const [text, setText] = useState('');
+  const box = useRef<HTMLTextAreaElement>(null);
+  // 輸入框貼了一整段建議：填進這裡並打開面板
+  useEffect(() => {
+    if (!seed) return;
+    setText(seed.text);
+    requestAnimationFrame(() => {
+      box.current?.scrollIntoView?.({ block: 'center' });
+      box.current?.focus();
+    });
+  }, [seed]);
   /** 使用者改過的勾選；沒改過的依 likely（這行主要是和弦）決定 */
   const [checked, setChecked] = useState<Record<number, boolean>>({});
   const [labels, setLabels] = useState<Record<number, SectionLabel>>({});
@@ -107,6 +119,7 @@ export function ChordImportPanel({ style, sectionName, hasChords, beatSec, onPre
       <label className="field" htmlFor="import-text">和弦進行</label>
       <textarea
         id="import-text"
+        ref={box}
         className="input mono import-text"
         rows={4}
         spellCheck={false}

@@ -166,6 +166,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const [loop, setLoop] = useState(false);
   const [notice, setNotice] = useState('');
   const [navOpen, setNavOpen] = useState(false);
+  const [pasteSeed, setPasteSeed] = useState<{ text: string; n: number } | undefined>();
   const searchRef = useRef<HTMLInputElement>(null);
   const playback = usePlayback();
   const sound = useSyncExternalStore(subscribe, getSoundState);
@@ -276,6 +277,25 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     const f = voiceAfter(prev, ch, style);
     if (!f) return setNotice(`${chordSymbol(ch)} 找不到好按的指法，換個寫法或改用「在指板上自己按」`);
     insert(f);
+  };
+  /** 一次加一串和弦：每個都接著前一個挑最順手的指法，最後選取最後一個 */
+  const addChords = (chs: ChordRef[]) => {
+    let prev = items[insertAt - 1]?.frets;
+    const added: ProgressionItem[] = [];
+    const skipped: string[] = [];
+    for (const ch of chs) {
+      const f = voiceAfter(prev, ch, style);
+      if (!f) {
+        skipped.push(chordSymbol(ch));
+        continue;
+      }
+      added.push({ id: newId('c'), frets: f });
+      prev = f;
+    }
+    if (!added.length) return setNotice(`${skipped.join('、')} 找不到好按的指法`);
+    setItems([...items.slice(0, insertAt), ...added, ...items.slice(insertAt)]);
+    setSelId((added[added.length - 1] as ProgressionItem).id);
+    setNotice(skipped.length ? `已加入 ${added.length} 個和弦；${skipped.join('、')} 找不到好按的指法，已跳過` : '');
   };
   const addSuggestion = (s: Suggestion) => insert(voiceAfter(items[insertAt - 1]?.frets, s.chord, style) ?? s.frets);
   const playSuggestion = (s: Suggestion) => {
@@ -578,12 +598,15 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             suggestions={suggestions}
             insertHint={insertHint}
             onAddChord={addChord}
+            onAddChords={addChords}
+            onPasteText={(text) => setPasteSeed((p) => ({ text, n: (p?.n ?? 0) + 1 }))}
             onPlaySuggestion={playSuggestion}
             onAddSuggestion={addSuggestion}
             onDraft={() => setSelId(null)}
             searchRef={searchRef}
           >
             <ChordImportPanel
+              seed={pasteSeed}
               style={style}
               sectionName={sectionName}
               hasChords={items.length > 0}

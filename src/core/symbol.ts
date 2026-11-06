@@ -108,6 +108,8 @@ const LABEL_WORDS: [RegExp, SectionLabel][] = [
   [/副歌|chorus|hook/i, 'chorus'],
   [/主歌|verse/i, 'verse'],
   [/橋段|bridge/i, 'bridge'],
+  [/間奏|interlude/i, 'interlude'],
+  [/solo|獨奏/i, 'solo'],
   [/前奏|intro/i, 'intro'],
   [/尾奏|outro|ending/i, 'outro'],
 ];
