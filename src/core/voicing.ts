@@ -1,7 +1,7 @@
 import { analyzeVoicing, chordPcs, STANDARD_TUNING, type ChordRef, type Fret } from './chord';
 import { mod12 } from './pitch';
 import { quality, type QualityDef } from './qualities';
-import { computeFingering, shapesFor, type Finger } from './shapes';
+import { computeFingering, shapesFor, suggestFingering, type Finger } from './shapes';
 import { voiceLeadingCost } from './voiceLeading';
 
 export interface VoicingCandidate {
@@ -285,4 +285,60 @@ export function voiceAfter(prev: readonly Fret[] | undefined, ch: ChordRef, styl
     if (c < min) [min, best] = [c, v];
   }
   return [...best.frets];
+}
+
+/** 換按法面板的一個選項。 */
+export interface RankedShape {
+  frets: Fret[];
+  fingers: Finger[] | undefined;
+  /** 跟前後和弦最好接（排第一個） */
+  best: boolean;
+  /** 就是現在用的這個 */
+  current: boolean;
+  /** 最低按到的品格；全是空弦時為 0 */
+  position: number;
+  /** 實際發聲的弦數 */
+  strings: number;
+  /** 有用到空弦 */
+  open: boolean;
+  /** 食指壓兩條弦以上（封閉或小封閉） */
+  barre: boolean;
+}
+
+/**
+ * 同一個和弦的各種按法，依「跟前後和弦接起來順不順」排序：按法本身的難度，
+ * 加上從前一個和弦換過來、再換到下一個和弦的移動量。目前用的按法若不在常用清單裡也會列出來。
+ */
+export function rankShapes(
+  ch: ChordRef,
+  current: readonly Fret[],
+  prev: readonly Fret[] | undefined,
+  next: readonly Fret[] | undefined,
+  style: VoicingStyle = 'open',
+  limit = 8,
+): RankedShape[] {
+  const key = (f: readonly Fret[]) => f.map((x) => (x === null ? 'x' : x)).join(' ');
+  const pool: { frets: Fret[]; cost: number; fingers?: Finger[] }[] = voicingChoices(ch, style, limit).map((v) => ({ ...v }));
+  if (!pool.some((v) => key(v.frets) === key(current))) pool.push({ frets: [...current], cost: 5 });
+  const move = moveCost(style);
+  const has = (f: readonly Fret[] | undefined): f is readonly Fret[] => !!f && f.some((x) => x !== null);
+  const scored = pool.map((v) => ({
+    v,
+    score: v.cost + (has(prev) ? move(prev, v.frets) : 0) + (has(next) ? move(v.frets, next) : 0),
+  }));
+  scored.sort((a, b) => a.score - b.score);
+  return scored.map(({ v }, i) => {
+    const fingers = v.fingers ?? suggestFingering(v.frets);
+    const pressed = v.frets.filter((f): f is number => f !== null && f > 0);
+    return {
+      frets: [...v.frets],
+      fingers,
+      best: i === 0,
+      current: key(v.frets) === key(current),
+      position: pressed.length ? Math.min(...pressed) : 0,
+      strings: v.frets.filter((f) => f !== null).length,
+      open: v.frets.some((f) => f === 0),
+      barre: (fingers ?? []).filter((f) => f === 1).length >= 2,
+    };
+  });
 }

@@ -137,7 +137,11 @@ describe('App', () => {
 
     // 換按法：還是 Am，只是指法換了
     const before = (screen.getByLabelText('六弦 → 一弦，x 代表悶音') as HTMLInputElement).value;
-    fireEvent.click(screen.getByRole('button', { name: /^換按法/ }));
+    const options = [...document.querySelectorAll<HTMLButtonElement>('.shapes .shape')];
+    expect(options.length).toBeGreaterThan(1);
+    expect(options[0]!.textContent).toContain('最好接');
+    expect(options.filter((o) => o.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+    fireEvent.click(options.find((o) => o.getAttribute('aria-pressed') !== 'true')!);
     await waitFor(() => expect((screen.getByLabelText('六弦 → 一弦，x 代表悶音') as HTMLInputElement).value).not.toBe(before));
     expect(chipNames()).toEqual(['C', 'Am', 'Fmaj7']);
   });
@@ -158,6 +162,25 @@ describe('App', () => {
     fireEvent.paste(search, { clipboardData: { getData: () => paragraph } });
     await waitFor(() => expect((screen.getByLabelText('和弦進行') as HTMLTextAreaElement).value).toBe(paragraph));
     expect(document.querySelectorAll('.import-row')).toHaveLength(2);
+  });
+
+  it('shows the song as a chart with the chosen shapes, and jumps back to edit a chord', async () => {
+    render(<App />);
+    await screen.findByLabelText('六弦 → 一弦，x 代表悶音');
+    const clear = screen.queryByRole('button', { name: '清空此段' });
+    if (clear) fireEvent.click(clear);
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Am7 Fmaj7 Am7' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ 加入 3 個' }));
+    await waitFor(() => expect(document.querySelectorAll('.tl .chip-name')).toHaveLength(3));
+
+    fireEvent.click(screen.getByRole('button', { name: '譜（和弦＋指法）' }));
+    // 用到的指法：Am7 出現兩次但按法一樣，只列一次
+    expect([...document.querySelectorAll('.sheet-shape figcaption')].map((e) => e.textContent)).toEqual(['Am7', 'Fmaj7']);
+    const chords = [...document.querySelectorAll<HTMLButtonElement>('.sheet-chord')];
+    expect(chords.map((c) => c.textContent)).toEqual(['Am7', 'Fmaj7', 'Am7']);
+
+    fireEvent.click(chords[1]!);
+    await waitFor(() => expect(document.querySelector('.inspector h2')?.textContent).toBe('第 2 個和弦'));
   });
 
   it('repeats a section as a linked copy, so editing one changes both', async () => {

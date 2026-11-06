@@ -19,7 +19,6 @@ import {
   contrastCheck,
   contrastReference,
   findChromaticLines,
-  formatFrets,
   fretsToNotes,
   labelName,
   melodyRange,
@@ -38,7 +37,7 @@ import {
   updateSection,
   verseGuidance,
   voiceAfter,
-  voicingChoices,
+  rankShapes,
   type ChordFunctionInfo,
   type ChordRef,
   type Fret,
@@ -58,6 +57,7 @@ import { ChordPalette } from './ChordPalette';
 import { HarmonizePanel } from './HarmonizePanel';
 import { HumRecorder } from './HumRecorder';
 import { SongSidebar, formatDuration } from './SongSidebar';
+import { SongSheet } from './SongSheet';
 import { SongStructure } from './SongStructure';
 import { SoundPanel } from './SoundPanel';
 import { Timeline } from './Timeline';
@@ -187,11 +187,23 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     if (undo && idea !== undo.after) setUndo(null);
   }, [idea, undo]);
 
-  // 換段落就取消選取
+  // 換段落就取消選取（從譜上點和弦過來時，改成選取那個和弦）
+  const pendingSel = useRef<string | null>(null);
   useEffect(() => {
-    setSelId(null);
+    setSelId(pendingSel.current);
+    pendingSel.current = null;
     setNotice('');
   }, [section.id]);
+  const [view, setView] = useState<'edit' | 'sheet'>('edit');
+  const editFromSheet = (sid: string, itemId: string) => {
+    setView('edit');
+    if (sid === section.id) setSelId(itemId);
+    else {
+      pendingSel.current = itemId;
+      setSectionId(sid);
+    }
+    requestAnimationFrame(() => document.querySelector('.arrange')?.scrollIntoView?.({ block: 'start' }));
+  };
 
   // 整首播放時，畫面跟著切到正在播的段落
   useEffect(() => {
@@ -272,9 +284,19 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     setNotice('');
     playChords([midisOfFrets(f)], 1.4);
   };
+  /**
+   * 新和弦的指法：這段裡已經有同一個和弦就沿用那個按法（彈回同一個和弦時通常按同一個位置），
+   * 否則挑跟前一個和弦最好接的。
+   */
+  const sameChord = (a: ChordRef, b: ChordRef | undefined) =>
+    !!b && a.rootPc === b.rootPc && a.qualityId === b.qualityId && a.bassPc === b.bassPc;
+  const voiceFor = (ch: ChordRef, prev: Fret[] | undefined, extra: readonly Fret[][] = []): Fret[] | undefined => {
+    const known = [...items.map((it) => it.frets), ...extra].find((f) => sameChord(ch, analyzeVoicing(f).best));
+    return known ? [...known] : voiceAfter(prev, ch, style);
+  };
   const addChord = (ch: ChordRef) => {
     const prev = items[insertAt - 1]?.frets;
-    const f = voiceAfter(prev, ch, style);
+    const f = voiceFor(ch, prev);
     if (!f) return setNotice(`${chordSymbol(ch)} 找不到好按的指法，換個寫法或改用「在指板上自己按」`);
     insert(f);
   };
@@ -284,7 +306,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     const added: ProgressionItem[] = [];
     const skipped: string[] = [];
     for (const ch of chs) {
-      const f = voiceAfter(prev, ch, style);
+      const f = voiceFor(ch, prev, added.map((a) => a.frets));
       if (!f) {
         skipped.push(chordSymbol(ch));
         continue;
@@ -297,11 +319,11 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     setSelId((added[added.length - 1] as ProgressionItem).id);
     setNotice(skipped.length ? `已加入 ${added.length} 個和弦；${skipped.join('、')} 找不到好按的指法，已跳過` : '');
   };
-  const addSuggestion = (s: Suggestion) => insert(voiceAfter(items[insertAt - 1]?.frets, s.chord, style) ?? s.frets);
+  const addSuggestion = (s: Suggestion) => insert(voiceFor(s.chord, items[insertAt - 1]?.frets) ?? s.frets);
   const playSuggestion = (s: Suggestion) => {
     const prev = items[insertAt - 1];
     const beat = 60 / bpmOf(section);
-    const f = voiceAfter(prev?.frets, s.chord, style) ?? s.frets;
+    const f = voiceFor(s.chord, prev?.frets) ?? s.frets;
     const prevDur = prev ? beatsOf(prev) : 0;
     playTimedChords([
       ...(prev ? [{ midis: midisOfFrets(prev.frets), startSec: 0, durSec: prevDur * beat }] : []),
@@ -325,12 +347,16 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
 
   // 換按法：同一個和弦的常用按法輪流換
   const selRef = selected ? analyzeVoicing(selected.frets).best : undefined;
-  const shapes = useMemo(() => (selRef ? voicingChoices(selRef, style, 8).map((v) => v.frets) : []), [selRef?.rootPc, selRef?.qualityId, selRef?.bassPc, style]); // eslint-disable-line react-hooks/exhaustive-deps
-  const shapeIndex = selected ? shapes.findIndex((f) => formatFrets(f) === formatFrets(selected.frets)) : -1;
-  const shapeInfo = selected && shapes.length ? { index: Math.max(0, shapeIndex), count: shapeIndex >= 0 ? shapes.length : shapes.length + 1 } : undefined;
-  const nextShape = () => {
-    if (!selected || !shapes.length) return;
-    const f = shapes[(shapeIndex + 1) % shapes.length] as Fret[];
+  const prevFrets = items[selIndex - 1]?.frets;
+  const nextFrets = items[selIndex + 1]?.frets;
+  const shapes = useMemo(
+    () => (selected && selRef ? rankShapes(selRef, selected.frets, prevFrets, nextFrets, style, 8) : []),
+    // 和弦本身、前後和弦或風格變了才重排
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selRef?.rootPc, selRef?.qualityId, selRef?.bassPc, selected?.frets, prevFrets, nextFrets, style],
+  );
+  const pickShape = (f: Fret[]) => {
+    if (!selected) return;
     updateItem(selected.id, { frets: [...f] });
     playChords([midisOfFrets(f)], 1.4);
   };
@@ -438,6 +464,19 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
         )}
       </header>
 
+      <div className="view-switch seg no-print" role="group" aria-label="檢視">
+        <button type="button" className={`seg-btn ${view === 'edit' ? 'is-on' : ''}`} aria-pressed={view === 'edit'} onClick={() => setView('edit')}>
+          編曲
+        </button>
+        <button type="button" className={`seg-btn ${view === 'sheet' ? 'is-on' : ''}`} aria-pressed={view === 'sheet'} onClick={() => setView('sheet')}>
+          譜（和弦＋指法）
+        </button>
+      </div>
+
+      {view === 'sheet' ? (
+        <SongSheet idea={idea} names={names} onEdit={editFromSheet} />
+      ) : (
+      <>
       <SongStructure
         blocks={blocks}
         activeId={section.id}
@@ -566,8 +605,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               tagClass={`tag-${selInfo?.tag ?? 'chromatic'}`}
               beats={beatsOf(selected)}
               onBeats={(n) => updateItem(selected.id, { beats: n })}
-              shape={shapeInfo}
-              onNextShape={nextShape}
+              shapes={shapes}
+              onPickShape={pickShape}
               onPlay={() => playChords([midisOfFrets(selected.frets)], 1.6)}
               onDelete={() => remove(selected.id)}
               onMove={move}
@@ -783,6 +822,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
 
         </section>
       </main>
+      </>
+      )}
       </div>
 
       {undo && (

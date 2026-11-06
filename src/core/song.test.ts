@@ -7,6 +7,7 @@ import {
   createIdea,
   duplicateIdea,
   duplicateSection,
+  layoutBars,
   linkedSections,
   moveSectionTo,
   songLength,
@@ -204,5 +205,17 @@ describe('linked sections', () => {
     const moved = moveSectionTo(idea, chorus.id, 0);
     expect(moved.sections[0]!.id).toBe(chorus.id);
     expect(songLength(idea)).toEqual({ beats: 4, seconds: 2.4 });
+  });
+});
+
+describe('layoutBars', () => {
+  it('splits a progression into 4-beat bars, carrying long chords over', () => {
+    const prog = [{ id: 'a', frets: FMAJ7, beats: 2 }, { id: 'b', frets: FM7, beats: 2 }, { id: 'c', frets: EM7, beats: 6 }];
+    const bars = layoutBars(prog);
+    expect(bars.map((b) => b.map((c) => `${c.itemId}${c.start}+${c.beats}${c.continued ? '~' : ''}`))).toEqual([
+      ['a0+2', 'b2+2'],
+      ['c0+4'],
+      ['c0+2~'],
+    ]);
   });
 });

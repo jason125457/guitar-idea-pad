@@ -417,3 +417,35 @@ export function migrateLegacyV1(raw: unknown, now = Date.now()): Idea | undefine
   const idea = createIdea('匯入的靈感', now);
   return { ...idea, sections: [{ ...createSection('verse'), progression }] };
 }
+
+/** 小節裡的一格：哪個和弦、在這小節的第幾拍開始、佔幾拍；continued = 從上一小節延續過來。 */
+export interface BarCell {
+  itemId: string;
+  index: number;
+  start: number;
+  beats: number;
+  continued: boolean;
+}
+
+/**
+ * 把和弦進行切成小節（給譜面用）：一個和弦跨小節時拆成兩格，第二格標成延續；
+ * 最後一小節不滿也照樣列出。
+ */
+export function layoutBars(progression: readonly ProgressionItem[], beatsPerBar = 4): BarCell[][] {
+  const bars: BarCell[][] = [];
+  let pos = 0;
+  progression.forEach((it, index) => {
+    let left = beatsOf(it);
+    let continued = false;
+    while (left > 1e-9) {
+      const bar = Math.floor(pos / beatsPerBar + 1e-9);
+      const start = pos - bar * beatsPerBar;
+      const take = Math.min(left, beatsPerBar - start);
+      (bars[bar] ??= []).push({ itemId: it.id, index, start, beats: take, continued });
+      pos += take;
+      left -= take;
+      continued = true;
+    }
+  });
+  return bars;
+}

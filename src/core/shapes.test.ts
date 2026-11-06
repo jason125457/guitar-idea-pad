@@ -11,6 +11,7 @@ import {
   shapesFor,
   suggestFingering,
   voiceProgression,
+  rankShapes,
   voiceAfter,
   voicingChoices,
   type Fret,
@@ -118,5 +119,20 @@ describe('voiceAfter', () => {
       return p.reduce((a, b) => a + b, 0) / p.length;
     };
     expect(Math.abs(avg(next) - avg(prev))).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('rankShapes', () => {
+  it('puts the shape that stays near the neighbours first and marks the current one', () => {
+    const fmaj7 = parseChordSymbol('Fmaj7')!;
+    const em7 = f('x 7 9 7 8 x');
+    const g = f('x 10 12 12 12 x');
+    const current = f('x x 3 2 1 0');
+    const ranked = rankShapes(fmaj7, current, em7, g, 'open');
+    expect(ranked.length).toBeGreaterThan(2);
+    expect(ranked[0]!.best).toBe(true);
+    expect(ranked[0]!.position).toBeGreaterThanOrEqual(5); // 前後都在高把位，不會推開放和弦
+    expect(ranked.filter((r) => r.current).map((r) => k(r.frets))).toEqual(['x x 3 2 1 0']);
+    for (const r of ranked) expect(analyzeVoicing(r.frets).best).toMatchObject({ rootPc: 5, qualityId: 'maj7' });
   });
 });

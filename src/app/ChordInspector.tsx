@@ -10,8 +10,10 @@ import {
   parseFretInput,
   suggestFingering,
   type Fret,
+  type RankedShape,
   type Speller,
 } from '../core';
+import { ChordDiagram } from './ChordDiagram';
 import { Fretboard } from './Fretboard';
 
 const EMPTY: Fret[] = [null, null, null, null, null, null];
@@ -33,9 +35,9 @@ interface EditProps extends Common {
   tagClass: string;
   beats: number;
   onBeats: (n: number) => void;
-  /** 換按法：同一個和弦的第幾種／共幾種 */
-  shape: { index: number; count: number } | undefined;
-  onNextShape: () => void;
+  /** 同一個和弦的各種按法（已依跟前後和弦好不好接排序） */
+  shapes: RankedShape[];
+  onPickShape: (f: Fret[]) => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
   canMove: { left: boolean; right: boolean };
@@ -125,6 +127,38 @@ export function ChordInspector(p: EditProps | DraftProps) {
         )}
       </div>
 
+      {p.mode === 'edit' && p.shapes.length > 1 && (
+        <div className="shapes">
+          <h3 className="shapes-title">換按法 <span className="help">點一下試聽並換上；排第一個的跟前後和弦最好接</span></h3>
+          <ul className="shapes-list">
+            {p.shapes.map((sh) => {
+              const where = sh.position === 0 ? '空弦' : sh.open && sh.position <= 4 ? '開放和弦' : `第 ${sh.position} 品`;
+              const desc = `${where} · ${sh.strings} 條弦${sh.barre ? ' · 封閉' : ''}`;
+              return (
+                <li key={formatFrets(sh.frets)}>
+                  <button
+                    type="button"
+                    className={`shape ${sh.current ? 'is-on' : ''}`}
+                    aria-pressed={sh.current}
+                    aria-label={`${name ?? ''} ${desc}，指法 ${formatFrets(sh.frets)}${sh.best ? '，最好接' : ''}`}
+                    onClick={() => p.onPickShape(sh.frets)}
+                  >
+                    <ChordDiagram frets={sh.frets} fingers={sh.fingers} width={88} />
+                    <span className="shape-desc">{desc}</span>
+                    {(sh.best || sh.current) && (
+                      <span className="shape-badges">
+                        {sh.best && <span className="shape-badge sb-best">最好接</span>}
+                        {sh.current && <span className="shape-badge sb-now">目前</span>}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <Fretboard frets={p.frets} onChange={p.onFrets} fingers={fingering} />
       {hasPressed && (
         <p className="fingers-line">
@@ -160,9 +194,6 @@ export function ChordInspector(p: EditProps | DraftProps) {
               <output className="stepper-val" aria-live="polite">{p.beats} 拍</output>
               <button type="button" className="btn btn-sm" disabled={p.beats >= MAX_BEATS} onClick={() => p.onBeats(p.beats + 1)} aria-label="多一拍">＋</button>
             </div>
-            <button type="button" className="btn btn-sm" disabled={!p.shape || p.shape.count < 2} onClick={p.onNextShape}>
-              換按法{p.shape && p.shape.count > 1 ? `（${p.shape.index + 1}/${p.shape.count}）` : ''}
-            </button>
           </div>
           <div className="row wrap">
             <button type="button" className="btn" disabled={!current.notes.length} onClick={p.onPlay}>▶ 試聽</button>
