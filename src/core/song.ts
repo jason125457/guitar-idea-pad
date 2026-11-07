@@ -43,7 +43,7 @@ export type StrumPattern = 'beat' | 'whole' | 'folk' | 'palm' | 'arpeggio';
 export const STRUM_PATTERNS: { id: StrumPattern; name: string; hint: string }[] = [
   { id: 'beat', name: '每拍刷一下', hint: '穩、直接，練換和弦' },
   { id: 'whole', name: '一小節刷一下', hint: '讓和弦響著，空、開闊' },
-  { id: 'folk', name: '民謠刷法', hint: '下、下上、上下上' },
+  { id: 'folk', name: '民謠刷法', hint: '下、下上、上下上；下、下上、下下上' },
   { id: 'palm', name: '八分音符悶音', hint: '電吉他的推進感' },
   { id: 'arpeggio', name: '分解和弦', hint: '先彈低音再往上撥' },
 ];

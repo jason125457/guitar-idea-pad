@@ -48,9 +48,11 @@ function useColumns(): number {
  */
 export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
   const cols = useColumns();
-  // 旋律的高低範圍：上下各留一個半音，避免最高、最低的音貼邊
-  const lo = melody.length ? Math.min(...melody.map((n) => n.midi)) - 1 : 0;
-  const hi = melody.length ? Math.max(...melody.map((n) => n.midi)) + 1 : 1;
+  // 旋律的高低範圍：至少涵蓋一個八度（置中），只錄了幾個相近的音時，音高差才不會被放大成大跳
+  const minMidi = melody.length ? Math.min(...melody.map((n) => n.midi)) : 0;
+  const maxMidi = melody.length ? Math.max(...melody.map((n) => n.midi)) : 0;
+  const span = Math.max(12, maxMidi - minMidi + 2);
+  const lo = (minMidi + maxMidi) / 2 - span / 2;
   /** 畫出 [start, start + len) 拍之間的旋律 */
   const lane = (start: number, len: number) => (
     <span className="tl-mel" aria-hidden="true">
@@ -64,8 +66,10 @@ export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, 
               key={`${n.beat}-${n.midi}`}
               className="tl-note"
               title={midiName(n.midi)}
-              style={{ left: `${((a - start) / len) * 100}%`, width: `${((b - a) / len) * 100}%`, bottom: `${((n.midi - lo) / (hi - lo)) * 100}%` }}
-            />
+              style={{ left: `${((a - start) / len) * 100}%`, width: `${((b - a) / len) * 100}%`, bottom: `calc((100% - 14px) * ${(n.midi - lo) / span})` }}
+            >
+              {midiName(n.midi)}
+            </span>
           );
         })}
     </span>

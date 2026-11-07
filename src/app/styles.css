@@ -615,8 +615,8 @@ main { display: grid; gap: var(--s5); }
 .sing-count { font-size: 28px; font-weight: 600; color: var(--accent); min-width: 3ch; text-align: center; font-variant-numeric: tabular-nums; }
 .sing-hint { margin: 0 !important; }
 
-.tl-mel { position: relative; display: block; height: 30px; margin: 0 14px 4px 0; border-bottom: 1px dashed var(--border); }
-.tl-note { position: absolute; height: 4px; margin-bottom: -2px; border-radius: 2px; background: var(--violet); min-width: 3px; }
+.tl-mel { position: relative; display: block; height: 44px; margin: 0 14px 4px 0; border-bottom: 1px dashed var(--border); }
+.tl-note { position: absolute; height: 14px; border-radius: 4px; background: var(--violet); color: var(--bg); min-width: 3px; padding: 0 4px; font-size: 10px; line-height: 14px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: clip; }
 .tl-clash { justify-self: start; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--danger); color: var(--danger); }
 
 .mel-fit { margin-top: var(--s3); padding: var(--s3); border-radius: 12px; background: var(--bg); border: 1px solid var(--border); border-left: 4px solid var(--border); }

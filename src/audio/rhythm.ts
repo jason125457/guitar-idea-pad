@@ -7,14 +7,25 @@ import { strumBeats, type TimedChord } from './pluck';
 
 const BEATS_PER_BAR = 4;
 const EIGHTHS_PER_BAR = BEATS_PER_BAR * 2;
+const EIGHTHS_PER_CYCLE = EIGHTHS_PER_BAR * 2;
 const EPS = 1e-9;
 
-/** 民謠刷法「下、下上、上下上」：一小節八個八分音符裡哪幾個要刷、往哪刷、多大力。 */
+/** 民謠刷法（第一小節）「下、下上、上下上」：一小節八個八分音符裡哪幾個要刷、往哪刷、多大力。 */
 const FOLK: Record<number, { dir: 'down' | 'up'; level: number }> = {
   0: { dir: 'down', level: 1 },
   2: { dir: 'down', level: 0.8 },
   3: { dir: 'up', level: 0.55 },
   5: { dir: 'up', level: 0.55 },
+  6: { dir: 'down', level: 0.8 },
+  7: { dir: 'up', level: 0.55 },
+};
+
+/** 民謠刷法的變化小節（第二小節）：「下、下上、下下上」，結尾多掃一下下，把句子推向下一小節。 */
+const FOLK_B: Record<number, { dir: 'down' | 'up'; level: number }> = {
+  0: { dir: 'down', level: 1 },
+  2: { dir: 'down', level: 0.8 },
+  3: { dir: 'up', level: 0.55 },
+  5: { dir: 'down', level: 0.75 },
   6: { dir: 'down', level: 0.8 },
   7: { dir: 'up', level: 0.55 },
 };
@@ -58,7 +69,10 @@ export function patternEvents(midis: readonly number[], beats: number, beatSec: 
   if (pattern === 'folk') {
     const hits: { e: number; dir: 'down' | 'up'; level: number }[] = [];
     for (let e = 0; e < eighths; e++) {
-      const h = FOLK[phase(e)];
+      const p = phase(e);
+      // 兩小節一輪：單數小節「下、下上、上下上」，雙數小節「下、下上、下下上」
+      const second = (((Math.round(startBeat * 2) + e) % EIGHTHS_PER_CYCLE) + EIGHTHS_PER_CYCLE) % EIGHTHS_PER_CYCLE >= EIGHTHS_PER_BAR;
+      const h = (second ? FOLK_B : FOLK)[p];
       if (h) hits.push({ e, ...h });
       else if (e === 0) hits.push({ e, dir: 'down', level: 0.9 }); // 和弦換在空拍上也要聽得到
     }
