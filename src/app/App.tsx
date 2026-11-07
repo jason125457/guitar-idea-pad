@@ -232,6 +232,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   useEffect(() => setPalOpen(false), [selId]);
   /** 新和弦插在哪裡：選中的和弦後面，沒選就加在最後 */
   const insertAt = selected ? selIndex + 1 : items.length;
+  /** 插入點前面的小節只差 2 拍就滿時，新和弦先補 2 拍湊齊；其餘用預設拍數（undefined） */
+  const fillBeats = items.slice(0, insertAt).reduce((n, x) => n + beatsOf(x), 0) % 4 === 2 ? 2 : undefined;
 
   // 只在和弦或鎖定的調改變時重新分析；打旋律時 section 物件也會換新，但和弦分析不需要重算
   const sa = useMemo(
@@ -293,7 +295,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
 
   /** 在插入點加入一個和弦（指法），選取它並刷一下讓使用者聽到 */
   const insert = (f: Fret[], beats?: number) => {
-    const it: ProgressionItem = { id: newId('c'), frets: [...f], ...(beats ? { beats } : {}) };
+    const b = beats ?? fillBeats;
+    const it: ProgressionItem = { id: newId('c'), frets: [...f], ...(b ? { beats: b } : {}) };
     setItems([...items.slice(0, insertAt), it, ...items.slice(insertAt)]);
     setSelId(it.id);
     setNotice('');
@@ -326,7 +329,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
         skipped.push(chordSymbol(ch));
         continue;
       }
-      added.push({ id: newId('c'), frets: f });
+      added.push({ id: newId('c'), frets: f, ...(!added.length && fillBeats ? { beats: fillBeats } : {}) });
       prev = f;
     }
     if (!added.length) return setNotice(`${skipped.join('、')} 找不到好按的指法`);
@@ -357,6 +360,16 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     if (selIndex < 0 || j < 0 || j >= items.length) return;
     const next = [...items];
     [next[selIndex], next[j]] = [next[j] as ProgressionItem, next[selIndex] as ProgressionItem];
+    setItems(next);
+  };
+
+  /** 拖曳排序：把這個和弦移到第 to 個位置，其他的順位補上，選取不變 */
+  const reorder = (id: string, to: number) => {
+    const from = items.findIndex((x) => x.id === id);
+    if (from < 0 || to < 0 || to >= items.length || from === to) return;
+    const next = [...items];
+    const [it] = next.splice(from, 1);
+    next.splice(to, 0, it as ProgressionItem);
     setItems(next);
   };
 
@@ -759,6 +772,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               };
             })}
             melody={grid}
+            onReorder={reorder}
             ghostBars={ghostBars}
             selectedId={selId}
             pos={playback.pos?.sectionId === section.id ? playback.pos : null}

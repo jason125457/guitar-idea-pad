@@ -211,6 +211,54 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: '第 2 個和弦' })).toBeTruthy();
   });
 
+  it('drags a chord block to a new place in the timeline', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    tab('打字／貼上');
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'C、G、Am、F' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ 加入 4 個' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G', 'Am', 'F']));
+
+    const dt = { setData: () => {}, effectAllowed: '', dropEffect: '' };
+    const block = (n: number) => screen.getByRole('button', { name: new RegExp(`第 ${n} 個和弦`) });
+    // 把第 4 個 F 拖到第 2 個的位置
+    fireEvent.dragStart(block(4), { dataTransfer: dt });
+    fireEvent.dragOver(block(2), { dataTransfer: dt });
+    fireEvent.drop(block(2), { dataTransfer: dt });
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'F', 'G', 'Am']));
+  });
+
+  it('fills a half-empty bar: a chord after a 2-beat chord gets 2 beats, then back to 4', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    const beatsOfBlock = () => [...document.querySelectorAll('.tl-block:not(.tl-add)')].map((b) => b.querySelectorAll('.tl-beat').length);
+    expect(beatsOfBlock()).toEqual([4]);
+
+    // C 改成 2 拍，接著加 G：小節還缺 2 拍，G 自動 2 拍
+    fireEvent.click(screen.getByRole('button', { name: '少一拍' }));
+    fireEvent.click(screen.getByRole('button', { name: '少一拍' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入 G' }));
+    await waitFor(() => expect(beatsOfBlock()).toEqual([2, 2]));
+
+    // 小節滿了，下一個 Am 回到 4 拍
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入 Am' }));
+    await waitFor(() => expect(beatsOfBlock()).toEqual([2, 2, 4]));
+
+    // 從選中的 C 後面插入：前面是 2 拍，插入的也是 2 拍
+    fireEvent.click(screen.getByRole('button', { name: /第 1 個和弦 C/ }));
+    fireEvent.click(screen.getByRole('button', { name: '在這個後面加其他和弦…' }));
+    tab('打字／貼上');
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'F' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ F' }));
+    await waitFor(() => expect(beatsOfBlock()).toEqual([2, 2, 2, 4]));
+  });
+
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
     await ready();

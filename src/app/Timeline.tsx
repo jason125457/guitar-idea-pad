@@ -19,6 +19,8 @@ interface Props {
   selectedId: string | null;
   pos: PlayPos | null;
   onSelect: (id: string) => void;
+  /** 拖曳排序：把 id 這個和弦移到第 toIndex 個位置 */
+  onReorder?: (id: string, toIndex: number) => void;
   onAdd: () => void;
   addActive: boolean;
   /** 跟著這段唱錄下的旋律（拍點對齊段落開頭） */
@@ -46,8 +48,10 @@ function useColumns(): number {
  * 小節時間軸：每個和弦方塊的寬度等於它佔的拍數，四拍一小節。
  * 播放時目前的和弦會亮起來，拍點一格一格跟著走（參考 Chordify、Riffstation 的做法）。
  */
-export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
+export function Timeline({ chords, selectedId, pos, onSelect, onReorder, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
   const cols = useColumns();
+  const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
+  const dragFrom = drag ? chords.findIndex((c) => c.id === drag.id) : -1;
   // 旋律的高低範圍：至少涵蓋一個八度（置中），只錄了幾個相近的音時，音高差才不會被放大成大跳
   const minMidi = melody.length ? Math.min(...melody.map((n) => n.midi)) : 0;
   const maxMidi = melody.length ? Math.max(...melody.map((n) => n.midi)) : 0;
@@ -87,7 +91,7 @@ export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, 
         return (
           <li
             key={c.id}
-            className={`tl-block tl-tag-${c.tag ?? 'none'} ${selected ? 'is-sel' : ''} ${playing ? 'is-play' : ''} ${startBeat % 4 === 0 ? 'on-bar' : ''}`}
+            className={`tl-block tl-tag-${c.tag ?? 'none'} ${selected ? 'is-sel' : ''} ${playing ? 'is-play' : ''} ${startBeat % 4 === 0 ? 'on-bar' : ''} ${drag?.id === c.id ? 'is-dragging' : ''} ${drag && drag.over === i && dragFrom !== i ? (dragFrom > i ? 'drop-before' : 'drop-after') : ''}`}
             style={{ gridColumn: `span ${span}` }}
           >
             <button
@@ -96,6 +100,28 @@ export function Timeline({ chords, selectedId, pos, onSelect, onAdd, addActive, 
               aria-pressed={selected}
               aria-label={`第 ${i + 1} 個和弦 ${c.name}，${c.beats} 拍${c.fit === 'clash' ? `，跟旋律的 ${c.clashText ?? ''} 有摩擦` : ''}${playing ? '，播放中' : ''}`}
               onClick={() => onSelect(c.id)}
+              {...(onReorder
+                ? {
+                    draggable: true,
+                    onDragStart: (e: React.DragEvent) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', c.id);
+                      setDrag({ id: c.id, over: null });
+                    },
+                    onDragOver: (e: React.DragEvent) => {
+                      if (!drag) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (drag.over !== i) setDrag({ id: drag.id, over: i });
+                    },
+                    onDrop: (e: React.DragEvent) => {
+                      e.preventDefault();
+                      if (drag && dragFrom !== i) onReorder(drag.id, i);
+                      setDrag(null);
+                    },
+                    onDragEnd: () => setDrag(null),
+                  }
+                : {})}
             >
               {startBeat % 4 === 0 && <span className="tl-bar" aria-hidden="true">{startBeat / 4 + 1}</span>}
               {melody.length > 0 && lane(startBeat, c.beats)}
