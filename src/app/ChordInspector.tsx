@@ -46,6 +46,10 @@ interface EditProps extends Common {
     clashText: string;
     ideas: { name: string; fit: MelodyFit; onUse: () => void; onHear: () => void }[];
   };
+  /** 接在這個和弦後面可以走的和弦（最多顯示 3 個） */
+  next: { key: string; symbol: string; roman: string; reason: string; onHear: () => void; onInsert: () => void }[];
+  /** 打開完整的加和弦盤（保留目前選取，新和弦仍插在這個後面） */
+  onMoreChords: () => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
   canMove: { left: boolean; right: boolean };
@@ -243,6 +247,29 @@ export function ChordInspector(p: EditProps | DraftProps) {
             <button type="button" className="btn btn-sm btn-ghost" disabled={!p.canMove.left} onClick={() => p.onMove(-1)} aria-label="往前移一格">← 前移</button>
             <button type="button" className="btn btn-sm btn-ghost" disabled={!p.canMove.right} onClick={() => p.onMove(1)} aria-label="往後移一格">後移 →</button>
             <button type="button" className="btn btn-sm btn-ghost insp-del" onClick={p.onDelete} aria-label={`刪除 ${name ?? '這個和弦'}`}>刪除</button>
+          </div>
+          <div className="insp-next">
+            <h3 className="shapes-title">接著可以走 <span className="help">插在這個和弦後面</span></h3>
+            {p.next.length > 0 ? (
+              <ul className="pal-sugs">
+                {p.next.slice(0, 3).map((s) => (
+                  <li key={s.key} className="pal-sug">
+                    <div className="pal-sug-head">
+                      <span className="pal-name">{s.symbol}</span>
+                      <span className="chip-roman">{s.roman}</span>
+                    </div>
+                    <p className="pal-reason">{s.reason}</p>
+                    <div className="row">
+                      <button type="button" className="btn btn-sm" onClick={s.onHear} aria-label={`試聽接 ${s.symbol}`}>▶ 試聽</button>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={s.onInsert} aria-label={`在此後面插入 ${s.symbol}`}>＋ 在此後面插入</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="help">還判斷不出調性，沒有推薦；可以用下面的完整加和弦盤。</p>
+            )}
+            <button type="button" className="btn btn-sm btn-ghost" onClick={p.onMoreChords}>在這個後面加其他和弦…</button>
           </div>
           <details className="insp-more">
             <summary>自己用指板調整</summary>

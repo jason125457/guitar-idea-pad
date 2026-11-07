@@ -656,6 +656,8 @@ main { display: grid; gap: var(--s5); }
   .ws-side { position: sticky; top: 84px; max-height: calc(100dvh - 100px); overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); }
 }
 .ws-side > .panel { margin: 0; }
+.pal-back { margin-bottom: var(--s2); }
+.insp-next { display: grid; gap: var(--s2); margin-top: var(--s3); }
 
 /* 段落標題列 */
 .arrange .arr-head { display: flex; align-items: center; gap: var(--s2) var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }

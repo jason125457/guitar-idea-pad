@@ -156,10 +156,8 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '加入 Am' }));
     await waitFor(() => expect(chipNames()).toEqual(['C', 'Am']));
 
-    // 打和弦名稱加入：Am 選取中，會插在它後面
-    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
-    fireEvent.click(screen.getByRole('button', { name: /第 2 個和弦 Am/ }));
-    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    // 打和弦名稱加入：Am 選取中，開完整加和弦盤，會插在它後面
+    fireEvent.click(screen.getByRole('button', { name: '在這個後面加其他和弦…' }));
     tab('打字／貼上');
     fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Fmaj7' } });
     fireEvent.click(screen.getByRole('button', { name: '＋ Fmaj7' }));
@@ -180,6 +178,37 @@ describe('App', () => {
     fireEvent.click(options.find((o) => o.getAttribute('aria-pressed') !== 'true')!);
     await waitFor(() => expect((screen.getByLabelText('六弦 → 一弦，x 代表悶音') as HTMLInputElement).value).not.toBe(before));
     expect(chipNames()).toEqual(['C', 'Am', 'Fmaj7']);
+  });
+
+  it('inserts a chord after the selected one, from the typed palette or from the next-chord ideas', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入 G' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G']));
+
+    // 選中中間前面的 C，打 Am：插在 C 和 G 中間，並改選到新的 Am
+    fireEvent.click(screen.getByRole('button', { name: /第 1 個和弦 C/ }));
+    fireEvent.click(screen.getByRole('button', { name: '在這個後面加其他和弦…' }));
+    expect(screen.getByRole('button', { name: '← 回到第 1 個和弦' })).toBeTruthy();
+    tab('打字／貼上');
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'Am' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ Am' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'Am', 'G']));
+    expect(screen.getByRole('heading', { name: '第 2 個和弦' })).toBeTruthy();
+
+    // 檢視器裡的推薦：再選回 C，按第一個「在此後面插入」，多一個和弦，緊接在 C 後面
+    fireEvent.click(screen.getByRole('button', { name: /第 1 個和弦 C/ }));
+    const insertBtn = screen.getAllByRole('button', { name: /^在此後面插入 / })[0]!;
+    const sym = insertBtn.getAttribute('aria-label')!.replace('在此後面插入 ', '');
+    fireEvent.click(insertBtn);
+    await waitFor(() => expect(chipNames()).toHaveLength(4));
+    expect(chipNames()[1]).toBe(sym);
+    expect(chipNames()[0]).toBe('C');
+    expect(screen.getByRole('heading', { name: '第 2 個和弦' })).toBeTruthy();
   });
 
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {

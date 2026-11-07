@@ -5,7 +5,7 @@ import {
   DEFAULT_BEATS,
   addSection,
   addTake,
-  harmonizeBars,
+  harmonizeBarsFlow,
   inferKeyFromMelody,
   checkChordAgainstMelody,
   chordsForMelody,
@@ -176,6 +176,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   /** 右邊工具欄：唱旋律打開時優先；否則選了和弦就看和弦，沒選就是加和弦 */
   const [singOpen, setSingOpen] = useState(false);
   const [palTab, setPalTab] = useState<PaletteTab>('common');
+  /** 選了和弦時也想看完整加和弦盤（新和弦照樣插在選中的後面） */
+  const [palOpen, setPalOpen] = useState(false);
   const [singBars, setSingBars] = useState(4);
   /** 播放鍵要播哪裡 */
   const [scope, setScope] = useState<'section' | 'song'>('section');
@@ -226,6 +228,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const locked = section.keyLock;
   const selIndex = items.findIndex((x) => x.id === selId);
   const selected = selIndex >= 0 ? items[selIndex] : undefined;
+  // 換選別的和弦（或加完新和弦後選到新的）就回到檢視器
+  useEffect(() => setPalOpen(false), [selId]);
   /** 新和弦插在哪裡：選中的和弦後面，沒選就加在最後 */
   const insertAt = selected ? selIndex + 1 : items.length;
 
@@ -507,9 +511,10 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const showContrastHint = !ref && (section.label === 'verse' || section.label === 'prechorus');
 
   // ── 右邊工具欄、旋律的幾次錄音、只有旋律還沒配和弦的小節 ──
-  const panelMode: 'sing' | 'chord' | 'add' = singOpen ? 'sing' : selected ? 'chord' : 'add';
+  const panelMode: 'sing' | 'chord' | 'add' = singOpen ? 'sing' : selected && !palOpen ? 'chord' : 'add';
   const openAdd = (tab: PaletteTab = 'common') => {
     setSingOpen(false);
+    setPalOpen(false);
     setSelId(null);
     setPalTab(tab);
   };
@@ -545,7 +550,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   /** 依旋律 g，從第 fromBeat 拍起每小節配一個和弦（四拍），接在現有的和弦後面挑順手的按法 */
   const chordsForMelodyBars = (g: readonly BeatNote[], fromBeat: number, n: number): ProgressionItem[] => {
     const k = key ?? inferKeyFromMelody(g.map((x) => ({ midi: x.midi, durSec: x.beats })))[0] ?? { tonic: 0, mode: 'major' as const };
-    const refsForBars = harmonizeBars(g, fromBeat, n, k, analyzed[items.length - 1]?.best);
+    const refsForBars = harmonizeBarsFlow(g, fromBeat, n, k, analyzed[items.length - 1]?.best);
     let prev = items[items.length - 1]?.frets;
     const added: ProgressionItem[] = [];
     for (const ch of refsForBars) {
@@ -920,7 +925,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             withMelody={withMelody}
             onWithMelody={setWithMelody}
           />
-        ) : selected ? (
+        ) : panelMode === 'chord' && selected ? (
           <ChordInspector
             key={selected.id}
             mode="edit"
@@ -937,12 +942,30 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             onPickShape={pickShape}
             {...(selMelody ? { melody: selMelody } : {})}
             onPlay={() => playChords([midisOfFrets(selected.frets)], 1.6)}
+            next={suggestions.map((s) => ({
+              key: s.mood,
+              symbol: s.symbol,
+              roman: s.roman,
+              reason: s.reason,
+              onHear: () => playSuggestion(s),
+              onInsert: () => addSuggestion(s),
+            }))}
+            onMoreChords={() => {
+              setPalTab('common');
+              setPalOpen(true);
+            }}
             onDelete={() => remove(selected.id)}
             onMove={move}
             canMove={{ left: selIndex > 0, right: selIndex < items.length - 1 }}
             onClose={() => setSelId(null)}
           />
         ) : (
+          <>
+          {selected && (
+            <button type="button" className="btn btn-sm btn-ghost pal-back" onClick={() => setPalOpen(false)}>
+              ← 回到第 {selIndex + 1} 個和弦
+            </button>
+          )}
           <ChordPalette
             keyInfo={key}
             keyGuesses={keys}
@@ -1009,6 +1032,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               }}
             />
           </ChordPalette>
+          </>
         )}
       </aside>
       </div>

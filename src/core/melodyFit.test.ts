@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
+import { buildBarWindows, checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, harmonizeBarsFlow, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
 
 const C = parseChordSymbol('C')!;
 const FMAJ7 = parseChordSymbol('Fmaj7')!;
@@ -69,6 +69,47 @@ describe('harmonizeBars', () => {
     expect(bars[0]).toMatch(/^(C|Em|Am)/);
     expect(['F', 'Dm', 'Fmaj7', 'Dm7']).toContain(bars[1]);
     expect(bars[2]).toBe(bars[1]); // 第三小節沒唱：沿用
+  });
+});
+
+describe('harmonizeBarsFlow (Viterbi)', () => {
+  const bar = (b: number, a: number, c: number) => [
+    { midi: a, beat: b * 4, beats: 2 },
+    { midi: c, beat: b * 4 + 2, beats: 2 },
+  ];
+  // E G | F A | G B | C G：每個音都能配好幾個和弦
+  const tune = [...bar(0, 64, 67), ...bar(1, 65, 69), ...bar(2, 67, 71), ...bar(3, 72, 67)];
+  const names = (cs: ReturnType<typeof harmonizeBars>) => cs.map((c) => chordSymbol(c));
+
+  it('finds a ii–V–I run where the per-bar picker just takes what fits each bar', () => {
+    const greedy = names(harmonizeBars(tune, 0, 4, KEY_C));
+    const flow = names(harmonizeBarsFlow(tune, 0, 4, KEY_C));
+    expect(flow[1]).toMatch(/^Dm/); // ii
+    expect(flow[2]).toMatch(/^G/); // V
+    expect(flow[3]).toBe('C'); // I
+    expect(greedy.some((n) => n.startsWith('G'))).toBe(false); // 逐小節的版本沒有走到屬和弦
+    expect(flow).not.toEqual(greedy);
+  });
+
+  it('never picks a chord that clashes with the bar it sits on', () => {
+    const flow = harmonizeBarsFlow(tune, 0, 4, KEY_C);
+    flow.forEach((ch, b) => {
+      expect(checkChordAgainstMelody(ch, melodyIn(tune, b * 4, b * 4 + 4)).fit).not.toBe('clash');
+    });
+  });
+
+  it('keeps bars on the fixed grid even when the melody starts late, and continues from the previous chord', () => {
+    const late = [{ midi: 64, beat: 4, beats: 4 }];
+    const w = buildBarWindows(late, 0, 2);
+    expect(w.map((x) => x.empty)).toEqual([true, false]);
+    const G = parseChordSymbol('G')!;
+    const flow = harmonizeBarsFlow(late, 0, 2, KEY_C, G);
+    expect(chordSymbol(flow[0]!)).toBe('G'); // 還沒唱：沿用前一個
+    expect(flow).toHaveLength(2);
+  });
+
+  it('falls back to the per-bar picker when nothing was sung', () => {
+    expect(names(harmonizeBarsFlow([], 0, 2, KEY_C))).toEqual(names(harmonizeBars([], 0, 2, KEY_C)));
   });
 });
 

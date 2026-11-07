@@ -4,6 +4,7 @@
  * 純函式，可以直接測試。
  */
 import { chordPcs, type ChordRef } from './chord';
+import { harmonize, type HarmonyWindow, type WindowNote } from './harmonize';
 import { diatonicChords, scalePcsForKey, type KeyGuess } from './key';
 import { mod12, parseNoteName } from './pitch';
 import { quality } from './qualities';
@@ -177,7 +178,62 @@ export function harmonizeBars(
   return out;
 }
 
-const NOTE_TOKEN = /^[A-Ga-g][#b♯♭]?-?\d$/;
+/**
+ * 每小節（固定 beatsPerBar 拍）一個窗：直接用段落拍點切，不看第一個音在哪，
+ * 所以開頭有休止也不會讓小節錯位。權重算法同 buildWindows：重疊拍數＋起音加成＋強拍加成。
+ */
+export function buildBarWindows(notes: readonly BeatNote[], fromBeat: number, bars: number, beatsPerBar = 4): HarmonyWindow[] {
+  const windows: HarmonyWindow[] = [];
+  for (let b = 0; b < bars; b++) {
+    const a = fromBeat + b * beatsPerBar;
+    const e = a + beatsPerBar;
+    const inWin: WindowNote[] = [];
+    for (const n of notes) {
+      const overlap = Math.min(n.beat + n.beats, e) - Math.max(n.beat, a);
+      if (overlap <= 0) continue;
+      const onset = n.beat >= a - 0.25 && n.beat < e;
+      const strong = n.beat >= a - 0.25 && n.beat < a + 0.25;
+      inWin.push({ midi: n.midi, weight: overlap + (onset ? 0.5 : 0) + (strong ? 1 : 0), strong });
+    }
+    windows.push({ index: b, bar: b, startBeat: a, endBeat: e, notes: inWin, empty: inWin.length === 0 });
+  }
+  return windows;
+}
+
+/**
+ * 跟 harmonizeBars 一樣每小節配一個和弦，但用 Viterbi 看整串的走向（下行五度、ii–V–I、
+ * 不要一直貼著同一個和弦），並跟前面已有的和弦 prev 接得順。
+ * 結果異常（數量不對、丟出錯誤）就退回逐小節挑最合的 harmonizeBars。
+ */
+export function harmonizeBarsFlow(
+  notes: readonly BeatNote[],
+  fromBeat: number,
+  bars: number,
+  key: Pick<KeyGuess, 'tonic' | 'mode'>,
+  prev?: ChordRef,
+  beatsPerBar = 4,
+): ChordRef[] {
+  try {
+    const windows = buildBarWindows(notes, fromBeat, bars, beatsPerBar);
+    // 開頭還沒唱的小節：沿用前一個和弦，沒有就用主和弦；Viterbi 只管有旋律的部分
+    const lead = windows.findIndex((w) => !w.empty);
+    if (lead < 0) return harmonizeBars(notes, fromBeat, bars, key, prev, beatsPerBar);
+    const start: ChordRef = prev ?? (diatonicChords(key)[0] as ChordRef);
+    const { choices } = harmonize(windows.slice(lead), key, 1, { prev: start, plain: true });
+    const sung = choices.map((c) => c[0]).filter((c): c is NonNullable<typeof c> => !!c);
+    if (sung.length === bars - lead) {
+      return [
+        ...Array.from({ length: lead }, () => start),
+        ...sung.map(({ rootPc, qualityId, bassPc }): ChordRef => ({ rootPc, qualityId, bassPc })),
+      ];
+    }
+  } catch {
+    /* 退回逐小節 */
+  }
+  return harmonizeBars(notes, fromBeat, bars, key, prev, beatsPerBar);
+}
+
+const NOTE_TOKEN =/^[A-Ga-g][#b♯♭]?-?\d$/;
 
 /**
  * 看起來是一串旋律音（音名＋八度，例如「Eb3 B2 E3 F#3」）就轉成旋律，每個音 beatsEach 拍；

@@ -256,11 +256,15 @@ export function harmonize(
   windows: readonly HarmonyWindow[],
   key: Pick<KeyGuess, 'tonic' | 'mode'>,
   alternatives = 3,
+  /** prev：前面已經有的和弦，第一個窗要跟它接得順，取代「開頭偏好主和弦」 */
+  opts: { prev?: ChordRef; plain?: boolean } = {},
 ): HarmonizeResult {
   const n = windows.length;
   if (n === 0) return { windows: [], choices: [] };
   const scale = new Set(scalePcsForKey(key));
-  const cands = (key.mode === 'major' ? MAJOR_CANDIDATES : MINOR_CANDIDATES).map((cd) => ({
+  // plain：不用副屬七和離調和弦（penalty ≥ 0.5），自動配出來的開頭才不會是 A7 這種怪起手
+  const pool = (key.mode === 'major' ? MAJOR_CANDIDATES : MINOR_CANDIDATES).filter((cd) => !opts.plain || cd.penalty < 0.4);
+  const cands = pool.map((cd) => ({
     ...cd,
     rootPc: mod12(key.tonic + cd.rel),
     bassPc: mod12(key.tonic + cd.rel),
@@ -276,7 +280,12 @@ export function harmonize(
   // 前向（Viterbi）
   const delta: number[][] = [];
   const back: number[][] = [];
-  delta[0] = cands.map((cd, k) => ((E[0] as number[])[k] as number) + startBonus(cd.rel, key.mode));
+  const { prev } = opts;
+  delta[0] = cands.map(
+    (cd, k) =>
+      ((E[0] as number[])[k] as number) +
+      (prev ? transition(prev, cd as Candidate & ChordRef, (windows[0] as HarmonyWindow).empty) : startBonus(cd.rel, key.mode)),
+  );
   back[0] = new Array<number>(K).fill(-1);
   for (let i = 1; i < n; i++) {
     const d: number[] = [];
