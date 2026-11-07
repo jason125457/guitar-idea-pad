@@ -461,14 +461,14 @@ main { display: grid; gap: var(--s5); }
   }
 }
 .shell { min-height: 100dvh; }
-@media (min-width: 1024px) { .shell { display: grid; grid-template-columns: 272px minmax(0, 1fr); } }
+@media (min-width: 1200px) { .shell { display: grid; grid-template-columns: 272px minmax(0, 1fr); } }
 
 .sidebar {
   background: var(--surface); border-right: 1px solid var(--border); padding: var(--s4);
   display: flex; flex-direction: column; gap: var(--s3); overflow-y: auto;
 }
-@media (min-width: 1024px) { .sidebar { position: sticky; top: 0; height: 100dvh; } }
-@media (max-width: 1023px) {
+@media (min-width: 1200px) { .sidebar { position: sticky; top: 0; height: 100dvh; } }
+@media (max-width: 1199px) {
   .sidebar {
     position: fixed; inset: 0 auto 0 0; z-index: 40; width: min(320px, 88vw);
     transform: translateX(-100%); transition: transform 200ms ease-out; visibility: hidden;
@@ -477,7 +477,7 @@ main { display: grid; gap: var(--s5); }
   .sb-scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.5); opacity: 0; pointer-events: none; transition: opacity 200ms; }
   .sb-scrim.is-open { opacity: 1; pointer-events: auto; }
 }
-@media (min-width: 1024px) { .sb-close, .nav-btn, .sb-scrim { display: none; } }
+@media (min-width: 1200px) { .sb-close, .nav-btn, .sb-scrim { display: none; } }
 .sb-top { display: flex; align-items: center; justify-content: space-between; }
 .sidebar .brand { font-size: 22px; }
 .sb-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
@@ -651,8 +651,8 @@ main { display: grid; gap: var(--s5); }
 .ws { display: grid; gap: var(--s5); align-items: start; }
 .ws-main { display: grid; gap: var(--s4); min-width: 0; }
 .ws-main main { display: grid; gap: var(--s4); }
-@media (min-width: 1200px) {
-  .ws { grid-template-columns: minmax(0, 1fr) 400px; }
+@media (min-width: 1024px) {
+  .ws { grid-template-columns: minmax(0, 1fr) 360px; }
   .ws-side { position: sticky; top: 84px; max-height: calc(100dvh - 100px); overflow-y: auto; overscroll-behavior: contain; border-radius: var(--radius); }
 }
 .ws-side > .panel { margin: 0; }
