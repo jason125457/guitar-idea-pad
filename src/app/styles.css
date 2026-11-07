@@ -363,7 +363,7 @@ main { display: grid; gap: var(--s5); }
 .arr-foot .help { margin: 0; }
 .empty { margin-top: var(--s3); }
 
-.tl { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2) 6px; }
+.tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px 6px; }
 .tl-block { min-width: 0; position: relative; }
 .tl-block.is-sel { z-index: 2; }
 .tl-float-bar {
