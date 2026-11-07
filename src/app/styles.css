@@ -364,7 +364,21 @@ main { display: grid; gap: var(--s5); }
 .empty { margin-top: var(--s3); }
 
 .tl { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2) 6px; }
-.tl-block { min-width: 0; }
+.tl-block { min-width: 0; position: relative; }
+.tl-block.is-sel { z-index: 2; }
+.tl-float-bar {
+  position: absolute; top: -17px; left: 50%; transform: translateX(-50%); z-index: 3;
+  display: inline-flex; gap: 2px; padding: 1px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--accent); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.tl-float-btn {
+  position: relative; min-width: 38px; min-height: 20px; padding: 0 var(--s2); border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 20px; cursor: pointer;
+}
+/* 看起來小，手指點的範圍還是夠大 */
+.tl-float-btn::before { content: ''; position: absolute; inset: -8px -2px; }
+.tl-float-btn:hover { color: var(--text); }
+.tl-float-btn.is-active { background: var(--accent); color: var(--bg); }
 .tl-block.is-dragging { opacity: 0.4; }
 .tl-block.drop-before .tl-main { box-shadow: -4px 0 0 0 var(--accent); }
 .tl-block.drop-after .tl-main { box-shadow: 4px 0 0 0 var(--accent); }

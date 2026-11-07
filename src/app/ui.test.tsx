@@ -259,6 +259,27 @@ describe('App', () => {
     await waitFor(() => expect(beatsOfBlock()).toEqual([2, 2, 2, 4]));
   });
 
+  it('changes a selected chord to 2 or 4 beats from the quick bar on the timeline', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    const beatCount = () => document.querySelectorAll('.tl-block:not(.tl-add)')[0]?.querySelectorAll('.tl-beat').length;
+    expect(beatCount()).toBe(4);
+    expect(screen.getByRole('button', { name: '設為 4 拍' }).getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: '設為 2 拍' }));
+    await waitFor(() => expect(beatCount()).toBe(2));
+    expect(screen.getByRole('button', { name: '設為 2 拍' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '設為 4 拍' }));
+    await waitFor(() => expect(beatCount()).toBe(4));
+
+    // 沒選中的和弦沒有快捷鍵
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    expect(screen.queryByRole('button', { name: '設為 2 拍' })).toBeNull();
+  });
+
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
     await ready();

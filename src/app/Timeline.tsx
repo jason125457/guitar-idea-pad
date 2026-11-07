@@ -20,6 +20,8 @@ interface Props {
   pos: PlayPos | null;
   onSelect: (id: string) => void;
   /** 拖曳排序：把 id 這個和弦移到第 toIndex 個位置 */
+  /** 選中的和弦上方的快捷鍵：直接改成 2 拍或 4 拍 */
+  onBeats?: (id: string, beats: number) => void;
   onReorder?: (id: string, toIndex: number) => void;
   onAdd: () => void;
   addActive: boolean;
@@ -48,7 +50,7 @@ function useColumns(): number {
  * 小節時間軸：每個和弦方塊的寬度等於它佔的拍數，四拍一小節。
  * 播放時目前的和弦會亮起來，拍點一格一格跟著走（參考 Chordify、Riffstation 的做法）。
  */
-export function Timeline({ chords, selectedId, pos, onSelect, onReorder, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
+export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
   const cols = useColumns();
   const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
   const dragFrom = drag ? chords.findIndex((c) => c.id === drag.id) : -1;
@@ -134,6 +136,22 @@ export function Timeline({ chords, selectedId, pos, onSelect, onReorder, onAdd, 
                 ))}
               </span>
             </button>
+            {selected && onBeats && (
+              <span className="tl-float-bar" role="group" aria-label={`第 ${i + 1} 個和弦的拍數`}>
+                {[2, 4].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`tl-float-btn ${c.beats === n ? 'is-active' : ''}`}
+                    aria-pressed={c.beats === n}
+                    aria-label={`設為 ${n} 拍`}
+                    onClick={() => onBeats(c.id, n)}
+                  >
+                    {n}拍
+                  </button>
+                ))}
+              </span>
+            )}
           </li>
         );
       })}

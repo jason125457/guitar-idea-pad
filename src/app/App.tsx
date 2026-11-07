@@ -773,6 +773,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             })}
             melody={grid}
             onReorder={reorder}
+            onBeats={(id, n) => updateItem(id, { beats: n })}
             ghostBars={ghostBars}
             selectedId={selId}
             pos={playback.pos?.sectionId === section.id ? playback.pos : null}
