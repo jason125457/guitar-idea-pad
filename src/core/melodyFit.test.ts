@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { barAlternatives, inferKeyFromMelody, buildBarWindows,checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, harmonizeBarsFlow, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
+import { alignFreeMelody, barAlternatives, inferKeyFromMelody, buildBarWindows,checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, harmonizeBarsFlow, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
 
 const C = parseChordSymbol('C')!;
 const FMAJ7 = parseChordSymbol('Fmaj7')!;
@@ -181,5 +181,32 @@ describe('suspiciousNotes', () => {
     const s = suspiciousNotes(notes, KEY_C);
     expect([...s.entries()]).toEqual([[1, 'octave'], [3, 'blip'], [4, 'out-of-key'], [5, 'range']]);
     expect(suspiciousNotes([{ midi: 64, beat: 0, beats: 1 }, { midi: 67, beat: 1, beats: 1 }], KEY_C).size).toBe(0);
+  });
+});
+
+describe('alignFreeMelody (free humming, no click)', () => {
+  // 100 BPM、每個音一拍，前面先空了 1.3 秒才開始哼
+  const hummed = (bpm: number, midis: number[], lead = 1.3) =>
+    midis.map((midi, i) => ({ midi, startSec: lead + (i * 60) / bpm, durSec: (60 / bpm) * 0.9 }));
+  const TUNE = [60, 60, 67, 67, 69, 69, 67, 67];
+
+  it('starts on the first note, finds the tempo and pads to whole bars', () => {
+    const r = alignFreeMelody(hummed(100, TUNE))!;
+    expect(r.bpm).toBeGreaterThanOrEqual(95);
+    expect(r.bpm).toBeLessThanOrEqual(105);
+    expect(r.totalBeats).toBe(8);
+    expect(r.notes.map((n) => n.beat)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(r.notes.map((n) => n.midi)).toEqual(TUNE);
+  });
+
+  it('re-aligns to a tempo the user picks (half speed puts two notes in each beat)', () => {
+    const r = alignFreeMelody(hummed(100, TUNE), 50)!;
+    expect(r.bpm).toBe(50);
+    expect(r.totalBeats).toBe(4);
+    expect(r.notes.map((n) => n.beat)).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
+  });
+
+  it('returns nothing when nothing was hummed', () => {
+    expect(alignFreeMelody([])).toBeUndefined();
   });
 });

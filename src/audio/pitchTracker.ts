@@ -36,11 +36,14 @@ export class PitchTracker {
   info: TrackerInfo | undefined;
   onFrame: ((f: PitchFrame) => void) | undefined;
   onEnded: (() => void) | undefined;
+  /** 這次錄音的原始聲音（瀏覽器支援 MediaRecorder 時才有），停止後才會有結果 */
+  audio: Promise<Blob | undefined> = Promise.resolve(undefined);
 
   private ctx: AudioContext | undefined;
   private node: AudioWorkletNode | undefined;
   private stream: MediaStream | undefined;
   private stopTimer: number | undefined;
+  private recorder: MediaRecorder | undefined;
   private starting = false;
   /** 偵測節點開始收音時的 AudioContext 時間；幀的 t 從這裡起算 */
   private origin = 0;
@@ -83,6 +86,7 @@ export class PitchTracker {
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
         });
         ctx.createMediaStreamSource(this.stream).connect(node);
+        this.keepAudio(this.stream);
       } else {
         this.stopTimer = window.setTimeout(() => this.finish(), this.startDemo(ctx, node) * 1000 + 400);
       }
@@ -112,6 +116,27 @@ export class PitchTracker {
     return this.frames;
   }
 
+  /** 把麥克風的原始聲音也錄下來，讓使用者可以對照「我哼的」和「抓到的」；錄不了就算了，不影響偵測 */
+  private keepAudio(stream: MediaStream): void {
+    this.audio = Promise.resolve(undefined);
+    if (typeof MediaRecorder === 'undefined') return;
+    try {
+      const rec = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data);
+      };
+      this.audio = new Promise((resolve) => {
+        rec.onstop = () => resolve(chunks.length ? new Blob(chunks, { type: rec.mimeType || 'audio/webm' }) : undefined);
+        rec.onerror = () => resolve(undefined);
+      });
+      rec.start();
+      this.recorder = rec;
+    } catch {
+      this.recorder = undefined;
+    }
+  }
+
   private finish(): void {
     this.release();
     this.onEnded?.();
@@ -120,6 +145,12 @@ export class PitchTracker {
   private release(): void {
     window.clearTimeout(this.stopTimer);
     if (this.stream) setAudioSession('playback');
+    try {
+      if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop();
+    } catch {
+      /* 忽略 */
+    }
+    this.recorder = undefined;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.node?.port.close();
     this.node?.disconnect();

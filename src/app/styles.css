@@ -814,3 +814,10 @@ main { display: grid; gap: var(--s5); }
 .theory-toggle { margin: var(--s3) 0; }
 .chip-roman { font-family: inherit; }
 
+/* ── 自由哼 ── */
+.sing-mode { display: flex; width: 100%; margin-bottom: var(--s2); }
+.sing-mode .seg-btn { flex: 1; }
+.hum-tempo { display: grid; gap: var(--s1); padding: var(--s3); border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.hum-tempo-now { margin: 0; font-size: 14px; color: var(--text); }
+.hum-tempo .help { margin: 0; }
+

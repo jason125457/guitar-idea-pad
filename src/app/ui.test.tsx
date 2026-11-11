@@ -443,6 +443,9 @@ describe('App', () => {
     await ready();
     clearSection();
     fireEvent.click(screen.getByRole('button', { name: '唱旋律' }));
+    // 預設是自由哼；切到「跟節拍器」才要選唱幾小節
+    expect(screen.getByRole('button', { name: /開始哼/ })).toHaveProperty('disabled', false);
+    fireEvent.click(screen.getByRole('button', { name: '跟節拍器' }));
     expect(screen.getByText(/這段還沒有和弦：只放節拍器/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /開始唱/ })).toHaveProperty('disabled', false);
     expect(screen.getByLabelText('唱幾小節')).toHaveProperty('value', '4');

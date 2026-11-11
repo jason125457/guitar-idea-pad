@@ -4,7 +4,7 @@
  * 純函式，可以直接測試。
  */
 import { chordPcs, type ChordRef } from './chord';
-import { harmonize, type HarmonyWindow, type WindowNote } from './harmonize';
+import { estimateTempo, harmonize, type HarmonyWindow, type WindowNote } from './harmonize';
 import { diatonicChords, scalePcsForKey, type KeyGuess } from './key';
 import { mod12, parseNoteName } from './pitch';
 import { quality } from './qualities';
@@ -295,4 +295,38 @@ export function suspiciousNotes(notes: readonly BeatNote[], key?: Pick<KeyGuess,
     else if (scale && !scale.has(mod12(n.midi))) out.set(i, 'out-of-key');
   });
   return out;
+}
+
+/** 自由哼（沒有節拍器）對齊到小節之後的結果 */
+export interface FreeMelody {
+  /** 用來對齊的速度（估出來的，或使用者指定的） */
+  bpm: number;
+  /** 補滿整小節之後共幾拍 */
+  totalBeats: number;
+  notes: BeatNote[];
+}
+
+/** 自由哼最多對齊成幾小節 */
+export const FREE_MAX_BARS = 32;
+
+/**
+ * 沒跟節拍器、隨口哼的旋律：以第一個音當第一拍，估一個速度（或用指定的 bpm），
+ * 把音吸附到八分音符格上，長度補到整小節。速度估錯很常見（常差一倍），所以 bpm 可以由外面指定後重算。
+ */
+export function alignFreeMelody(
+  notes: readonly { midi: number; startSec: number; durSec: number }[],
+  bpm?: number,
+  beatsPerBar = 4,
+): FreeMelody | undefined {
+  if (!notes.length) return undefined;
+  const sorted = [...notes].sort((a, b) => a.startSec - b.startSec);
+  const t0 = (sorted[0] as { startSec: number }).startSec;
+  const shifted = sorted.map((n) => ({ ...n, startSec: n.startSec - t0 }));
+  const tempo = Math.round(bpm ?? estimateTempo(shifted));
+  const beatSec = 60 / tempo;
+  const endBeats = Math.max(...shifted.map((n) => n.startSec + n.durSec)) / beatSec;
+  const bars = Math.min(FREE_MAX_BARS, Math.max(1, Math.ceil(endBeats / beatsPerBar - 0.125)));
+  const totalBeats = bars * beatsPerBar;
+  const grid = quantizeMelody(shifted, beatSec, totalBeats);
+  return grid.length ? { bpm: tempo, totalBeats, notes: grid } : undefined;
 }

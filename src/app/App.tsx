@@ -542,8 +542,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const starts = items.reduce<number[]>((acc, _it, i) => [...acc, i === 0 ? 0 : (acc[i - 1] as number) + beatsOf(items[i - 1] as ProgressionItem)], []);
   const melodyAt = (i: number) => melodyIn(grid, starts[i] ?? 0, (starts[i] ?? 0) + beatsOf(items[i] as ProgressionItem));
   const names2 = (ms: readonly number[]) => ms.map((m) => midiName(m, speller)).join('、');
-  const gridPatch = (g: BeatNote[]) => {
-    const beatSec = 60 / bpm;
+  const gridPatch = (g: BeatNote[], atBpm = bpm) => {
+    const beatSec = 60 / atBpm;
     return {
       melodyGrid: g,
       melody: notesToMelodyText(g, speller),
@@ -553,6 +553,12 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const saveMelody = (g: BeatNote[]) => {
     const { takes: next } = addTake(section, g);
     withUndo(`已錄好${sectionName}的旋律（${g.length} 個音）`, { ...gridPatch(g), melodyTakes: next });
+  };
+  /** 自由哼的旋律：這段的速度跟著改成估出來的那個，旋律才會照原本哼的節奏播 */
+  const saveFreeMelody = (g: BeatNote[], newBpm: number) => {
+    const { takes: next } = addTake(section, g);
+    const clamped = Math.min(BPM_RANGE[1], Math.max(BPM_RANGE[0], Math.round(newBpm)));
+    withUndo(`已錄好${sectionName}的旋律（${g.length} 個音，${clamped} BPM）`, { ...gridPatch(g, clamped), melodyTakes: next, bpm: clamped });
   };
   /** 選中和弦的旋律分析：唱了什麼、合不合、還能配什麼 */
   const selMelody = (() => {
@@ -623,15 +629,15 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const melodyEnd = grid.reduce((e, n) => Math.max(e, n.beat + n.beats), 0);
   const ghostBars = Math.max(0, Math.ceil((melodyEnd - totalBeats) / 4 - 1e-9));
   /** 還沒有和弦時錄音用的「無聲小節」 */
-  const silentPlan = (n: number): PlanItem[] =>
-    Array.from({ length: n }, (_, i) => ({ sectionId: section.id, itemId: `bar-${i}`, midis: [], beats: 4, beatSec: 60 / bpm, pattern: 'beat', sectionBeat: i * 4 }));
+  const silentPlan = (n: number, beatSec = 60 / bpm): PlanItem[] =>
+    Array.from({ length: n }, (_, i) => ({ sectionId: section.id, itemId: `bar-${i}`, midis: [], beats: 4, beatSec, pattern: 'beat', sectionBeat: i * 4 }));
   const recordPlan = () => (items.length ? planOf(section) : silentPlan(singBars));
   const hearTake = (id: string) => hearNotes(takes.find((x) => x.id === id)?.notes ?? grid);
   /** 把一串對齊拍點的音跟這段的和弦一起播（沒有和弦就只放旋律） */
-  const hearNotes = (notes: readonly BeatNote[]) => {
-    const beatSec = 60 / bpm;
+  const hearNotes = (notes: readonly BeatNote[], atBeatSec?: number) => {
+    const beatSec = atBeatSec ?? 60 / bpm;
     const n = Math.max(1, Math.ceil(notes.reduce((e, x) => Math.max(e, x.beat + x.beats), 0) / 4));
-    playback.play(items.length ? planOf(section) : silentPlan(n), {
+    playback.play(items.length ? planOf(section) : silentPlan(n, beatSec), {
       mode: 'section',
       melody: notes.map((x) => ({ midi: x.midi, startSec: x.beat * beatSec, durSec: x.beats * beatSec })),
     });
@@ -1108,6 +1114,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             start={(o) => playback.play(recordPlan(), { mode: 'section', startAt: 0, ...o })}
             stop={playback.stop}
             onDone={saveMelody}
+            onDoneFree={saveFreeMelody}
             onClear={() => withUndo(`已清除${sectionName}的旋律`, { melodyGrid: undefined, melody: '', melodyTimed: undefined, melodyTakes: undefined })}
             withMelody={withMelody}
             onWithMelody={setWithMelody}

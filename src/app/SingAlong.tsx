@@ -3,6 +3,7 @@ import { getContext } from '../audio/context';
 import { onStopAll } from '../audio/pluck';
 import { PitchTracker, TrackerError } from '../audio/pitchTracker';
 import {
+  alignFreeMelody,
   hzToMidiFloat,
   melodyFromNoteText,
   midiName,
@@ -25,6 +26,9 @@ const REASON: Record<SuspectReason, string> = {
 
 const COUNT_IN = 4;
 const QUIET_RMS = 0.01;
+/** 自由哼最長錄多久（秒） */
+const FREE_MAX_SEC = 90;
+const FREE_BPM: readonly [number, number] = [40, 200];
 
 export interface TakeInfo {
   id: string;
@@ -56,7 +60,9 @@ interface Props {
   withMelody: boolean;
   onWithMelody: (on: boolean) => void;
   /** 試聽一串音（確認錄音結果時用），會跟這段的和弦一起播 */
-  onHearNotes: (notes: BeatNote[]) => void;
+  onHearNotes: (notes: BeatNote[], beatSec?: number) => void;
+  /** 自由哼（沒跟節拍器）確認完：旋律和估出來的速度一起存 */
+  onDoneFree?: (notes: BeatNote[], bpm: number) => void;
   /** 直接打音名當旋律 */
   onTyped: (notes: BeatNote[]) => void;
 }
@@ -78,7 +84,14 @@ export function SingAlong(p: Props) {
   const [review, setReview] = useState<BeatNote[]>([]);
   const [picked, setPicked] = useState<number | null>(null);
   const [typed, setTyped] = useState('');
-  const rec = useRef<{ tr: PitchTracker; offset: number; t0: number; timer: number; off: () => void } | null>(null);
+  /** 還沒有和弦時可以選：跟節拍器唱，或不管拍子自由哼（哼完再估速度） */
+  const [mode, setMode] = useState<'beat' | 'free'>(() => (p.hasChords || !p.onDoneFree ? 'beat' : 'free'));
+  const free = mode === 'free' && !p.hasChords && !!p.onDoneFree;
+  /** 自由哼的原始結果：還沒對齊拍子的音、目前用的速度、補滿之後幾拍 */
+  const [hum, setHum] = useState<{ raw: { midi: number; startSec: number; durSec: number }[]; bpm: number; totalBeats: number } | null>(null);
+  const [audioUrl, setAudioUrl] = useState('');
+  const player = useRef<HTMLAudioElement | null>(null);
+  const rec = useRef<{ tr: PitchTracker; offset: number; t0: number; timer: number; off: () => void; free: boolean } | null>(null);
   const liveRef = useRef({ hz: 0, clarity: 0, rms: 0 });
 
   const finish = () => {
@@ -88,6 +101,24 @@ export function SingAlong(p: Props) {
     window.clearTimeout(r.timer);
     r.off();
     const frames = r.tr.stop();
+    if (r.free) {
+      setPhase('idle');
+      const raw = segmentNotes(frames, {}).map((n) => ({ midi: n.midi, startSec: n.startSec, durSec: n.durSec }));
+      const aligned = alignFreeMelody(raw);
+      if (!aligned) {
+        setError('沒有抓到旋律。靠近麥克風、用「啦」或「嗚」哼大聲一點，每個音拉長一點再試一次。');
+        return;
+      }
+      setHum({ raw, bpm: aligned.bpm, totalBeats: aligned.totalBeats });
+      setReview(aligned.notes);
+      setPicked(null);
+      setPhase('review');
+      // 原始錄音晚一點才會好；好了就能按「聽原本的錄音」對照
+      void (r.tr as { audio?: Promise<Blob | undefined> }).audio?.then((blob) => {
+        if (blob) setAudioUrl(URL.createObjectURL(blob));
+      });
+      return;
+    }
     p.stop();
     setPhase('idle');
     const ctx = getContext();
@@ -106,8 +137,46 @@ export function SingAlong(p: Props) {
     setPhase('review');
   };
 
+  /** 換一個速度重新對齊（估出來的速度常差一倍）；會蓋掉在下面手動修過的音 */
+  const retime = (bpm: number) => {
+    if (!hum) return;
+    const next = Math.round(Math.min(FREE_BPM[1], Math.max(FREE_BPM[0], bpm)));
+    const aligned = alignFreeMelody(hum.raw, next);
+    if (!aligned) return;
+    setHum({ ...hum, bpm: aligned.bpm, totalBeats: aligned.totalBeats });
+    setReview(aligned.notes);
+    setPicked(null);
+  };
+  const stopOriginal = () => {
+    player.current?.pause();
+    player.current = null;
+  };
+  const hearOriginal = () => {
+    stopOriginal();
+    p.stop();
+    if (!audioUrl) return;
+    const a = new Audio(audioUrl);
+    player.current = a;
+    void a.play().catch(() => setError('這個瀏覽器放不出剛剛的錄音'));
+  };
+  const clearHum = () => {
+    stopOriginal();
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl('');
+    setHum(null);
+  };
+
   const keep = () => {
     if (!review.length) return;
+    if (hum && p.onDoneFree) {
+      p.onDoneFree(review, hum.bpm);
+      setMessage(`已放進時間軸：${review.length} 個音，速度設成 ${hum.bpm} BPM。可以按「依旋律配上和弦」讓工具先配一版`);
+      clearHum();
+      setReview([]);
+      setPicked(null);
+      setPhase('idle');
+      return;
+    }
     p.onDone(review);
     setMessage(`已放進時間軸：${review.length} 個音${p.hasChords ? '' : '。可以按「依旋律配上和弦」讓工具先配一版'}`);
     setReview([]);
@@ -136,6 +205,15 @@ export function SingAlong(p: Props) {
       setError(e instanceof TrackerError ? e.message : '無法開始錄音');
       return;
     }
+    clearHum();
+    if (free) {
+      // 自由哼：不放節拍器、不數拍，按下去就開始錄，哼完自己按停
+      p.stop();
+      const timer = window.setTimeout(finish, FREE_MAX_SEC * 1000);
+      rec.current = { tr, offset: 0, t0: -1, timer, off: () => {}, free: true };
+      setPhase('recording');
+      return;
+    }
     const res = p.start({ clickOnly: clickOnly || !p.hasChords, countInBeats: COUNT_IN });
     if (!res) {
       tr.stop();
@@ -148,7 +226,7 @@ export function SingAlong(p: Props) {
     const timer = window.setTimeout(finish, (res.t0 - ctx.currentTime + res.total + 0.4) * 1000);
     // 播放被別的地方停掉（按了停止、播了別的）就結束錄音
     const off = onStopAll(() => finish());
-    rec.current = { tr, offset, t0: res.t0, timer, off };
+    rec.current = { tr, offset, t0: res.t0, timer, off, free: false };
     setPhase('recording');
   };
 
@@ -159,7 +237,7 @@ export function SingAlong(p: Props) {
       const r = rec.current;
       if (!r) return;
       const ctx = getContext();
-      const beatsLeft = Math.ceil((r.t0 - ctx.currentTime) / p.beatSec);
+      const beatsLeft = r.free ? 0 : Math.ceil((r.t0 - ctx.currentTime) / p.beatSec);
       const { hz, clarity, rms } = liveRef.current;
       const f = hz > 0 && clarity >= 0.9 ? hzToMidiFloat(hz) : undefined;
       setLive({
@@ -175,6 +253,7 @@ export function SingAlong(p: Props) {
   // 離開頁面或切換段落時收掉麥克風
   useEffect(
     () => () => {
+      player.current?.pause();
       const r = rec.current;
       if (!r) return;
       rec.current = null;
@@ -213,13 +292,33 @@ export function SingAlong(p: Props) {
             </div>
           )}
           <p className="help sing-hint">
-            {live.count ? '數完四拍就開始唱' : live.level < QUIET_RMS ? '聽不太到你的聲音：靠近麥克風一點' : `正在錄${p.sectionName}，唱完會自動停`}
+            {live.count
+              ? '數完四拍就開始唱'
+              : live.level < QUIET_RMS
+                ? '聽不太到你的聲音：靠近麥克風一點'
+                : free
+                  ? '隨口哼就好，不用管拍子；哼完按下面的按鈕'
+                  : `正在錄${p.sectionName}，唱完會自動停`}
           </p>
-          <button type="button" className="btn btn-primary sing-go" onClick={finish}>■ 唱完了</button>
+          <button type="button" className="btn btn-primary sing-go" onClick={finish}>{free ? '■ 哼完了' : '■ 唱完了'}</button>
         </div>
       ) : phase === 'review' ? (
         <div className="review">
           <h3 className="shapes-title">抓到這些音，先確認一下</h3>
+          {hum && (
+            <div className="hum-tempo" role="group" aria-label="自由哼的速度">
+              <p className="hum-tempo-now">
+                估計速度 <strong>{hum.bpm} BPM</strong>，共 {hum.totalBeats / 4} 小節
+              </p>
+              <div className="review-tools">
+                <button type="button" className="btn btn-sm" disabled={hum.bpm / 2 < FREE_BPM[0]} onClick={() => retime(hum.bpm / 2)}>慢一半</button>
+                <button type="button" className="btn btn-sm" disabled={hum.bpm <= FREE_BPM[0]} onClick={() => retime(hum.bpm - 4)} aria-label="速度慢一點">−</button>
+                <button type="button" className="btn btn-sm" disabled={hum.bpm >= FREE_BPM[1]} onClick={() => retime(hum.bpm + 4)} aria-label="速度快一點">＋</button>
+                <button type="button" className="btn btn-sm" disabled={hum.bpm * 2 > FREE_BPM[1]} onClick={() => retime(hum.bpm * 2)}>快一倍</button>
+              </div>
+              <p className="help">按「聽聽看」，節奏跟你哼的對不上就調速度（小節數太多按「慢一半」）。先調好速度再修下面的音，改速度會重新對齊。</p>
+            </div>
+          )}
           <p className="help">點一個音可以調高、調低半音或刪掉；虛線框的是可能抓錯的。</p>
           <ul className="review-notes">
             {review.map((n, i) => {
@@ -251,12 +350,29 @@ export function SingAlong(p: Props) {
             </div>
           )}
           <div className="review-actions">
-            <button type="button" className="btn btn-sm" disabled={!review.length} onClick={() => p.onHearNotes(review)}>▶ 聽聽看</button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void begin()}>重唱</button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={!review.length}
+              onClick={() => {
+                stopOriginal();
+                if (hum) p.onHearNotes(review, 60 / hum.bpm);
+                else p.onHearNotes(review);
+              }}
+            >
+              ▶ 聽聽看
+            </button>
+            {hum && (
+              <button type="button" className="btn btn-sm" disabled={!audioUrl} onClick={hearOriginal} title={audioUrl ? undefined : '這個瀏覽器沒有留下原始錄音'}>
+                ▶ 聽原本的錄音
+              </button>
+            )}
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void begin()}>{hum ? '重哼' : '重唱'}</button>
             <button
               type="button"
               className="btn btn-sm btn-ghost"
               onClick={() => {
+                clearHum();
                 setReview([]);
                 setPhase('idle');
               }}
@@ -268,12 +384,24 @@ export function SingAlong(p: Props) {
         </div>
       ) : (
         <>
+          {!p.hasChords && p.onDoneFree && (
+            <div className="seg seg-sm sing-mode" role="group" aria-label="怎麼唱">
+              <button type="button" className={`seg-btn ${free ? 'is-on' : ''}`} aria-pressed={free} onClick={() => setMode('free')}>
+                自由哼
+              </button>
+              <button type="button" className={`seg-btn ${!free ? 'is-on' : ''}`} aria-pressed={!free} onClick={() => setMode('beat')}>
+                跟節拍器
+              </button>
+            </div>
+          )}
           <p className="help sing-intro">
             {p.hasChords
               ? '先數四拍，再從頭播這段，你跟著唱（用「啦」也可以）。'
-              : '這段還沒有和弦：只放節拍器，先把旋律唱下來，之後再配和弦。'}
+              : free
+                ? '不用管拍子，想到什麼就哼（用「啦」也可以）。哼完工具會估速度、分好小節，之後再配和弦。'
+                : '這段還沒有和弦：只放節拍器，先把旋律唱下來，之後再配和弦。'}
           </p>
-          {!p.hasChords && (
+          {!p.hasChords && !free && (
             <label className="menu-row">
               <span>唱幾小節</span>
               <select className="input input-sm" value={p.bars} onChange={(e) => p.onBars(Number(e.target.value))}>
@@ -308,7 +436,7 @@ export function SingAlong(p: Props) {
               <rect x="9" y="3" width="6" height="11" rx="3" />
               <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
             </svg>
-            {p.takes.length ? '再唱一次' : '開始唱'}
+            {free ? (p.takes.length ? '再哼一次' : '開始哼') : p.takes.length ? '再唱一次' : '開始唱'}
           </button>
           <form
             className="sing-typed"
