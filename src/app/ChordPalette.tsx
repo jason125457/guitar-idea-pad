@@ -6,7 +6,6 @@ import {
   midiName,
   parseChordSymbol,
   parseProgressionText,
-  romanNumeral,
   spellerForKey,
   type BeatNote,
   type ChordRef,
@@ -43,6 +42,10 @@ interface Props {
   suggestions: Suggestion[];
   /** 插入位置的說明，例如「加在 Am7 後面」 */
   insertHint: string;
+  /** 和弦旁邊的小標：白話角色（家、展開…）或級數，由外面決定 */
+  roleLabel: (c: ChordRef, key: Pick<KeyGuess, 'tonic' | 'mode'>) => string;
+  /** 「常用」分頁下方的起手式（常見進行） */
+  starters?: ReactNode;
   onAddChord: (ch: ChordRef) => void;
   /** 一次加入好幾個和弦（在輸入框打「Cmaj7 → Fmaj7」） */
   onAddChords: (chs: ChordRef[]) => void;
@@ -174,7 +177,7 @@ export function ChordPalette(p: Props) {
               <li key={`${c.rootPc}-${c.qualityId}`}>
                 <button type="button" className="pal-chord" onClick={() => p.onAddChord(c)} aria-label={`加入 ${name}`}>
                   <span className="pal-name">{name}</span>
-                  <span className="chip-roman">{romanNumeral(c, key.tonic, key.mode)}</span>
+                  <span className="chip-roman">{p.roleLabel(c, key)}</span>
                 </button>
               </li>
             );
@@ -215,7 +218,7 @@ export function ChordPalette(p: Props) {
           </label>
         </div>
       </div>
-
+      {p.starters}
       </div>
 
       <div role="tabpanel" id="ppanel-next" aria-labelledby="ptab-next" hidden={p.tab !== 'next'}>
@@ -228,7 +231,7 @@ export function ChordPalette(p: Props) {
               <li key={s.mood} className={`pal-sug mood-${s.mood}`}>
                 <div className="pal-sug-head">
                   <span className="pal-name">{s.symbol}</span>
-                  <span className="chip-roman">{s.roman}</span>
+                  <span className="chip-roman">{p.roleLabel(s.chord, key)}</span>
                   <span className="mood">{MOOD_LABEL[s.mood]}</span>
                 </div>
                 <p className="pal-reason">{s.reason}</p>

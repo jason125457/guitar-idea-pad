@@ -44,6 +44,10 @@ import {
   voiceAfter,
   rankShapes,
   barAlternatives,
+  classifyChord,
+  plainRole,
+  STARTER_TONICS,
+  type Starter,
   type ChordFunctionInfo,
   type ChordRef,
   type HarmonyStyle,
@@ -68,6 +72,7 @@ import { SongSidebar, formatDuration } from './SongSidebar';
 import { SingAlong } from './SingAlong';
 import { SongSheet } from './SongSheet';
 import { SongStructure } from './SongStructure';
+import { StarterList } from './StarterList';
 import { SoundPanel } from './SoundPanel';
 import { Timeline } from './Timeline';
 import { UndoToast } from './UndoToast';
@@ -88,6 +93,7 @@ const MOTION_LABEL: Record<Motion, string> = {
 };
 const STYLE_KEY = 'guitar-idea-pad.voicingStyle';
 const HARM_KEY = 'guitar-idea-pad.harmonyStyle';
+const THEORY_KEY = 'guitar-idea-pad.showTheory';
 
 function tagLabel(info: Pick<ChordFunctionInfo, 'tag' | 'detail'>): string {
   switch (info.tag) {
@@ -189,6 +195,24 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     }
     setHarmStyleState(s);
   };
+  /** 和弦旁邊的小標：預設用白話（家、展開、想回家），打開才顯示級數與樂理名詞 */
+  const [theory, setTheoryState] = useState(() => {
+    try {
+      return localStorage.getItem(THEORY_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setTheory = (on: boolean) => {
+    try {
+      localStorage.setItem(THEORY_KEY, on ? '1' : '0');
+    } catch {
+      /* 忽略 */
+    }
+    setTheoryState(on);
+  };
+  /** 起手式用哪個大調；還沒選過就跟著這段的調（是好按的大調時），否則 C */
+  const [starterTonicPick, setStarterTonic] = useState<number | null>(null);
   const [loop, setLoop] = useState(false);
   const [notice, setNotice] = useState('');
   const [navOpen, setNavOpen] = useState(false);
@@ -310,6 +334,9 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   };
 
   const label = (c: ChordRef | undefined) => (c ? chordSymbol(c, speller) : '?');
+  const roleText = (info: ChordFunctionInfo | undefined) => (!info ? '' : theory ? info.roman : plainRole(info));
+  const roleOf = (c: ChordRef, k: Pick<KeyGuess, 'tonic' | 'mode'> | undefined = key) => (k ? roleText(classifyChord(c, k.tonic, k.mode)) : '');
+  const starterTonic = starterTonicPick ?? (key?.mode === 'major' && STARTER_TONICS.includes(key.tonic) ? key.tonic : 0);
   const setItems = (next: ProgressionItem[]) => patch({ progression: next });
   const updateItem = (id: string, p: Partial<ProgressionItem>) => setItems(items.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
@@ -339,8 +366,9 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     insert(f);
   };
   /** 一次加一串和弦：每個都接著前一個挑最順手的指法，最後選取最後一個 */
-  const addChords = (chs: ChordRef[]) => {
-    let prev = items[insertAt - 1]?.frets;
+  /** 一串和弦各挑一個按法：每個都接著前一個挑最順手的 */
+  const voiceList = (chs: readonly ChordRef[], after: Fret[] | undefined) => {
+    let prev = after;
     const added: ProgressionItem[] = [];
     const skipped: string[] = [];
     for (const ch of chs) {
@@ -349,14 +377,42 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
         skipped.push(chordSymbol(ch));
         continue;
       }
-      added.push({ id: newId('c'), frets: f, ...(!added.length && fillBeats ? { beats: fillBeats } : {}) });
+      added.push({ id: newId('c'), frets: f });
       prev = f;
     }
+    return { added, skipped };
+  };
+  const addChords = (chs: ChordRef[]) => {
+    const { added, skipped } = voiceList(chs, items[insertAt - 1]?.frets);
+    if (added[0] && fillBeats) added[0] = { ...added[0], beats: fillBeats };
     if (!added.length) return setNotice(`${skipped.join('、')} 找不到好按的指法`);
     setItems([...items.slice(0, insertAt), ...added, ...items.slice(insertAt)]);
     setSelId((added[added.length - 1] as ProgressionItem).id);
     setNotice(skipped.length ? `已加入 ${added.length} 個和弦；${skipped.join('、')} 找不到好按的指法，已跳過` : '');
   };
+  // ── 起手式：常見的和弦進行，先聽再整組放進來 ──
+  const hearStarter = (chs: ChordRef[]) => {
+    const { added } = voiceList(chs, items[insertAt - 1]?.frets);
+    const dur = 2 * (60 / bpmOf(section)); // 試聽每個和弦兩拍就好，八個和弦也不會等太久
+    playTimedChords(added.map((it, i) => ({ midis: midisOfFrets(it.frets), startSec: i * dur, durSec: dur })));
+  };
+  const useStarter = (chs: ChordRef[], st: Starter, tonic: number) => {
+    if (items.length) return addChords(chs);
+    const { added } = voiceList(chs, undefined);
+    if (!added.length) return;
+    withUndo(`已套用「${st.name}」，可以點任何一個和弦來改`, { progression: added, keyLock: { tonic, mode: 'major' } });
+    setSelId(null);
+  };
+  const starterList = (compact: boolean) => (
+    <StarterList
+      tonic={starterTonic}
+      onTonic={setStarterTonic}
+      onHear={hearStarter}
+      onUse={useStarter}
+      useLabel={items.length ? '加進來' : '用這組'}
+      compact={compact}
+    />
+  );
   const addSuggestion = (s: Suggestion) => insert(voiceFor(s.chord, items[insertAt - 1]?.frets) ?? s.frets);
   const playSuggestion = (s: Suggestion) => {
     const prev = items[insertAt - 1];
@@ -827,7 +883,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               return {
                 id: it.id,
                 name: label(best),
-                roman: info?.roman ?? '',
+                roman: roleText(info),
                 tag: info?.tag,
                 beats: beatsOf(it),
                 fit: check?.fit,
@@ -920,7 +976,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
 
           {items.length === 0 && grid.length === 0 && (
             <div className="empty">
-              <p>從右邊點和弦加進來，或按「唱旋律」先把旋律唱下來。</p>
+              {starterList(false)}
+              <p>也可以從右邊一個一個點和弦加進來，或按「唱旋律」先把旋律唱下來。</p>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => patch({ progression: EXAMPLE.map((f) => ({ id: newId('c'), frets: [...f] })) })}>
                 載入範例聽聽看
               </button>
@@ -932,6 +989,10 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
         <details className="more-tools">
           <summary>更多工具：聲部動向、主歌與副歌的對比</summary>
           <div className="more">
+          <label className="check theory-toggle">
+            <input type="checkbox" checked={theory} onChange={(e) => setTheory(e.target.checked)} />
+            顯示樂理標記（級數 I、V7，借用和弦、副屬和弦…）
+          </label>
 
           <details className="panel fold">
             <summary>聲部動向：每條弦怎麼移動</summary>
@@ -1059,8 +1120,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             frets={selected.frets}
             onFrets={(f) => updateItem(selected.id, { frets: f })}
             speller={key ? speller : undefined}
-            roman={selInfo?.roman ?? ''}
-            tagText={selInfo ? tagLabel(selInfo) : ''}
+            roman={roleText(selInfo)}
+            tagText={theory && selInfo ? tagLabel(selInfo) : ''}
             tagClass={`tag-${selInfo?.tag ?? 'chromatic'}`}
             beats={beatsOf(selected)}
             onBeats={(n) => updateItem(selected.id, { beats: n })}
@@ -1071,7 +1132,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             next={suggestions.map((s) => ({
               key: s.mood,
               symbol: s.symbol,
-              roman: s.roman,
+              roman: roleOf(s.chord),
               reason: s.reason,
               onHear: () => playSuggestion(s),
               onInsert: () => addSuggestion(s),
@@ -1102,6 +1163,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             onStyle={setStyle}
             suggestions={suggestions}
             insertHint={insertHint}
+            roleLabel={roleOf}
+            {...(items.length || grid.length ? { starters: starterList(true) } : {})}
             onAddChord={addChord}
             onAddChords={addChords}
             onMelodyNotes={applyTypedMelody}

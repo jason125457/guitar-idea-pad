@@ -346,7 +346,32 @@ describe('App', () => {
     clearSection();
     fireEvent.click(await screen.findByRole('button', { name: /載入範例/ }));
     await waitFor(() => expect(document.querySelector('.key-name')?.textContent).toContain('C 大調'));
-    expect([...document.querySelectorAll('.tl .chip-roman')].map((e) => e.textContent).slice(0, 3)).toEqual(['IVmaj7', 'ivm7', 'iiim7']);
+    // 預設用白話標籤；打開「顯示樂理標記」才是級數
+    const roles = () => [...document.querySelectorAll('.tl .chip-roman')].map((e) => e.textContent).slice(0, 3);
+    expect(roles()).toEqual(['展開', '借來的色彩', '穩']);
+    fireEvent.click(screen.getByLabelText(/顯示樂理標記/));
+    await waitFor(() => expect(roles()).toEqual(['IVmaj7', 'ivm7', 'iiim7']));
+    fireEvent.click(screen.getByLabelText(/顯示樂理標記/));
+    await waitFor(() => expect(roles()).toEqual(['展開', '借來的色彩', '穩']));
+  });
+
+  it('offers starter progressions on an empty section and in the palette', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    // 空白段落：換到 G 大調，套用「流行萬用」
+    const empty = within(document.querySelector('.arrange .empty') as HTMLElement);
+    fireEvent.click(empty.getByRole('button', { name: 'G 大調' }));
+    fireEvent.click(empty.getByRole('button', { name: /^用這組流行萬用：G – D – Em – C$/ }));
+    await waitFor(() => expect(chipNames()).toEqual(['G', 'D', 'Em', 'C']));
+    expect([...document.querySelectorAll('.tl .chip-roman')].map((e) => e.textContent)).toEqual(['家', '想回家', '穩', '展開']);
+    expect(document.querySelector('.key-name')?.textContent).toContain('G 大調');
+    expect(screen.getByText(/已套用「流行萬用」/)).toBeTruthy();
+
+    // 已有和弦：和弦盤的「常用」分頁也有，會接在後面
+    const pal = within(document.querySelector('.palette') as HTMLElement);
+    fireEvent.click(pal.getByRole('button', { name: /^加進來三個和弦：G – C – D – C$/ }));
+    await waitFor(() => expect(chipNames()).toEqual(['G', 'D', 'Em', 'C', 'G', 'C', 'D', 'C']));
   });
 
   it('treats a list of note names in the chord box as a melody and fills chords from it', async () => {

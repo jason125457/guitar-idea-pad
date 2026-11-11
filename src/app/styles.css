@@ -790,3 +790,27 @@ main { display: grid; gap: var(--s5); }
 .sing-typed { margin-top: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--border); }
 .sing-typed .field { margin-bottom: var(--s1); }
 .sing-typed .help { margin-top: var(--s1) !important; }
+
+/* ── 起手式：常見的和弦進行 ── */
+.starters { display: grid; gap: var(--s2); }
+.starters.is-compact { margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--border); }
+.starters-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); }
+.panel .starters .pal-title { margin: 0; }
+.starters-key { display: inline-flex; align-items: center; gap: var(--s2); }
+.starters-key-label { font-size: 13px; color: var(--muted); }
+.starters-key .seg-btn { min-width: 40px; padding: 0 var(--s2); }
+.starters-help { margin: 0; }
+.starter-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.starters.is-compact .starter-list { grid-template-columns: 1fr; }
+.starter {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap;
+  padding: var(--s3); border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2);
+}
+.starter-text { display: grid; gap: 2px; min-width: 0; flex: 1 1 180px; }
+.starter-name { font-weight: 600; color: var(--text); }
+.starter-chords { font-size: 14px; color: var(--accent); overflow-wrap: anywhere; }
+.starter-feel { font-size: 13px; color: var(--muted); }
+.starter-actions { display: flex; gap: var(--s2); }
+.theory-toggle { margin: var(--s3) 0; }
+.chip-roman { font-family: inherit; }
+
