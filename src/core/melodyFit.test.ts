@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBarWindows, checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, harmonizeBarsFlow, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
+import { barAlternatives, inferKeyFromMelody, buildBarWindows,checkChordAgainstMelody, chordSymbol, chordsForMelody, harmonizeBars, harmonizeBarsFlow, melodyFromNoteText, melodyIn, noteAgainstChord, parseChordSymbol, quantizeMelody, suspiciousNotes } from './index';
 
 const C = parseChordSymbol('C')!;
 const FMAJ7 = parseChordSymbol('Fmaj7')!;
@@ -81,9 +81,47 @@ describe('harmonizeBarsFlow (Viterbi)', () => {
   const tune = [...bar(0, 64, 67), ...bar(1, 65, 69), ...bar(2, 67, 71), ...bar(3, 72, 67)];
   const names = (cs: ReturnType<typeof harmonizeBars>) => cs.map((c) => chordSymbol(c));
 
+  // 每個音一拍的兒歌：一般人會從主和弦開始，用 C、F、G、Am 這幾個
+  const beats = (midis: number[]) => midis.map((midi, i) => ({ midi, beat: i, beats: 1 }));
+  const TWINKLE = beats([60, 60, 67, 67, 69, 69, 67, 67, 65, 65, 64, 64, 62, 62, 60, 60]);
+  const ODE = beats([64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62, 62]);
+  const MARY = beats([64, 62, 60, 62, 64, 64, 64, 64, 62, 62, 62, 62, 64, 67, 67, 67]);
+
+  it('starts an empty section on the tonic chord instead of being pushed off it', () => {
+    for (const t of [TWINKLE, ODE, MARY]) expect(names(harmonizeBarsFlow(t, 0, 4, KEY_C))[0]).toBe('C');
+    expect(names(harmonizeBarsFlow(TWINKLE, 0, 4, KEY_C, undefined, 4, 'color'))[0]).toMatch(/^C/);
+  });
+
+  it('uses only plain triads by default and colour chords only when asked', () => {
+    for (const t of [TWINKLE, ODE, MARY]) {
+      for (const n of names(harmonizeBarsFlow(t, 0, 4, KEY_C))) expect(n).toMatch(/^[A-G][#b]?m?$/);
+    }
+    expect(names(harmonizeBarsFlow(TWINKLE, 0, 4, KEY_C))).toEqual(['C', 'F', 'Dm', 'C']);
+    expect(names(harmonizeBarsFlow(ODE, 0, 4, KEY_C))).toEqual(['C', 'G', 'C', 'G']);
+    expect(names(harmonizeBarsFlow(TWINKLE, 0, 4, KEY_C, undefined, 4, 'color')).some((n) => /7|add9/.test(n))).toBe(true);
+  });
+
+  it('guesses C major for short C-major phrases that do not end on C', () => {
+    const guess = (t: typeof TWINKLE) => inferKeyFromMelody(t.map((n) => ({ midi: n.midi, durSec: n.beats })));
+    for (const t of [TWINKLE, ODE]) expect(guess(t)[0]).toMatchObject({ tonic: 0, mode: 'major' });
+    // 只有 C D E G 四個音、停在 G：C 大調和 G 大調都說得通，至少要列在前三名讓使用者選
+    expect(guess(MARY).some((k) => k.tonic === 0 && k.mode === 'major')).toBe(true);
+  });
+
+  it('lists swap options for a bar: no clashes, triads first, same order whatever the current chord is', () => {
+    const alts = barAlternatives(melodyIn(TWINKLE, 0, 4), KEY_C); // C C G G
+    const n = alts.map((c) => chordSymbol(c));
+    expect(n[0]).toBe('C');
+    expect(n.length).toBeGreaterThan(1);
+    expect(n).not.toContain('Bdim');
+    const firstSeventh = n.findIndex((x) => /7|add9/.test(x));
+    if (firstSeventh >= 0) expect(n.slice(firstSeventh).every((x) => /7|add9/.test(x))).toBe(true);
+    alts.forEach((ch) => expect(checkChordAgainstMelody(ch, melodyIn(TWINKLE, 0, 4)).fit).not.toBe('clash'));
+  });
+
   it('finds a ii–V–I run where the per-bar picker just takes what fits each bar', () => {
     const greedy = names(harmonizeBars(tune, 0, 4, KEY_C));
-    const flow = names(harmonizeBarsFlow(tune, 0, 4, KEY_C));
+    const flow = names(harmonizeBarsFlow(tune, 0, 4, KEY_C, undefined, 4, 'color'));
     expect(flow[1]).toMatch(/^Dm/); // ii
     expect(flow[2]).toMatch(/^G/); // V
     expect(flow[3]).toBe('C'); // I

@@ -43,18 +43,33 @@ export function inferKeyFromMelody(notes: readonly Pick<TimedNote, 'midi' | 'dur
   if (notes.length === 0) return [];
   const hist = new Array<number>(12).fill(0);
   for (const n of notes) hist[mod12(n.midi)] = (hist[mod12(n.midi)] as number) + Math.max(0.05, n.durSec);
+  const total = hist.reduce((s, x) => s + x, 0);
   const lastPc = mod12((notes[notes.length - 1] as { midi: number }).midi);
+  const firstPc = mod12((notes[0] as { midi: number }).midi);
   const all: Omit<KeyGuess, 'confidence'>[] = [];
   for (let tonic = 0; tonic < 12; tonic++) {
     for (const mode of ['major', 'minor'] as const) {
       const profile = mode === 'major' ? KK_MAJOR : KK_MINOR;
       const rotated = Array.from({ length: 12 }, (_, pc) => profile[mod12(pc - tonic)] as number);
-      all.push({ tonic, mode, score: correlation(hist, rotated) + (lastPc === tonic ? 0.06 : 0) });
+      // 短短一句旋律光看音級分布很容易猜到關係調或屬調，所以再看：
+      // 有多少落在主和弦的音上、有沒有調外音、頭尾是不是主和弦的音；差不多時偏向大調
+      const triad = [0, mode === 'major' ? 4 : 3, 7].map((i) => mod12(tonic + i));
+      const scale = new Set(scalePcsForKey({ tonic, mode }));
+      if (mode === 'minor') scale.add(mod12(tonic + 11)); // 和聲小調的導音
+      const share = (pcs: Iterable<number>) => [...pcs].reduce((s, pc) => s + (hist[pc] as number), 0) / total;
+      const score =
+        correlation(hist, rotated) +
+        0.5 * share(triad) -
+        (1 - share(scale)) +
+        (lastPc === tonic ? 0.1 : triad.includes(lastPc) ? 0.05 : 0) +
+        (triad.includes(firstPc) ? 0.05 : 0) +
+        (mode === 'major' ? 0.12 : 0);
+      all.push({ tonic, mode, score });
     }
   }
   all.sort((a, b) => b.score - a.score || (a.mode === 'major' ? -1 : 1));
   const gap = (all[0] as { score: number }).score - (all[1] as { score: number }).score;
-  const confidence = Math.max(0, Math.min(1, gap / 0.12));
+  const confidence = Math.max(0, Math.min(1, gap / 0.2));
   return all.slice(0, topN).map((k, i) => ({ ...k, confidence: i === 0 ? confidence : 0 }));
 }
 
@@ -191,6 +206,12 @@ const MINOR_CANDIDATES: Candidate[] = [
   c(5, 'maj', 0.35), c(0, 'maj', 0.5),
 ];
 
+/** 簡單模式：只用調內的大小三和弦，主、下屬、屬優先（不會樂理的人最常彈、也最好按的那幾個） */
+const SIMPLE_MAJOR: Candidate[] = [c(0, 'maj'), c(5, 'maj'), c(7, 'maj'), c(9, 'min', 0.1), c(2, 'min', 0.15), c(4, 'min', 0.3)];
+const SIMPLE_MINOR: Candidate[] = [
+  c(0, 'min'), c(8, 'maj', 0.05), c(10, 'maj', 0.05), c(5, 'min', 0.05), c(3, 'maj', 0.1), c(7, 'min', 0.2), c(7, 'maj', 0.2),
+];
+
 /** 單一旋律音對和弦的契合度：和弦音 1，延伸音 .45，調內經過音 .15，半音摩擦或調外音為負。 */
 function noteFit(midi: number, chord: { rootPc: number; qualityId: string }, scale: Set<number>, strong: boolean): number {
   const q = quality(chord.qualityId);
@@ -257,13 +278,16 @@ export function harmonize(
   key: Pick<KeyGuess, 'tonic' | 'mode'>,
   alternatives = 3,
   /** prev：前面已經有的和弦，第一個窗要跟它接得順，取代「開頭偏好主和弦」 */
-  opts: { prev?: ChordRef; plain?: boolean } = {},
+  opts: { prev?: ChordRef; plain?: boolean; simple?: boolean } = {},
 ): HarmonizeResult {
   const n = windows.length;
   if (n === 0) return { windows: [], choices: [] };
   const scale = new Set(scalePcsForKey(key));
   // plain：不用副屬七和離調和弦（penalty ≥ 0.5），自動配出來的開頭才不會是 A7 這種怪起手
-  const pool = (key.mode === 'major' ? MAJOR_CANDIDATES : MINOR_CANDIDATES).filter((cd) => !opts.plain || cd.penalty < 0.4);
+  // simple：只用調內三和弦
+  const pool = opts.simple
+    ? key.mode === 'major' ? SIMPLE_MAJOR : SIMPLE_MINOR
+    : (key.mode === 'major' ? MAJOR_CANDIDATES : MINOR_CANDIDATES).filter((cd) => !opts.plain || cd.penalty < 0.4);
   const cands = pool.map((cd) => ({
     ...cd,
     rootPc: mod12(key.tonic + cd.rel),

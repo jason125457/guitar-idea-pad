@@ -43,8 +43,11 @@ import {
   verseGuidance,
   voiceAfter,
   rankShapes,
+  barAlternatives,
   type ChordFunctionInfo,
   type ChordRef,
+  type HarmonyStyle,
+  type KeyGuess,
   type BeatNote,
   type Fret,
   type Idea,
@@ -84,6 +87,7 @@ const MOTION_LABEL: Record<Motion, string> = {
   mixed: '混合',
 };
 const STYLE_KEY = 'guitar-idea-pad.voicingStyle';
+const HARM_KEY = 'guitar-idea-pad.harmonyStyle';
 
 function tagLabel(info: Pick<ChordFunctionInfo, 'tag' | 'detail'>): string {
   switch (info.tag) {
@@ -169,6 +173,22 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const [selId, setSelId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Fret[]>(EMPTY);
   const [style, setStyleState] = useState<VoicingStyle>(readStyle);
+  /** 依旋律自動配和弦時：只用簡單的三和弦，還是可以用七和弦、加九和弦 */
+  const [harmStyle, setHarmStyleState] = useState<HarmonyStyle>(() => {
+    try {
+      return localStorage.getItem(HARM_KEY) === 'color' ? 'color' : 'simple';
+    } catch {
+      return 'simple';
+    }
+  });
+  const setHarmStyle = (s: HarmonyStyle) => {
+    try {
+      localStorage.setItem(HARM_KEY, s);
+    } catch {
+      /* 忽略 */
+    }
+    setHarmStyleState(s);
+  };
   const [loop, setLoop] = useState(false);
   const [notice, setNotice] = useState('');
   const [navOpen, setNavOpen] = useState(false);
@@ -561,10 +581,16 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     });
   };
   /** 依旋律 g，從第 fromBeat 拍起每小節配一個和弦（四拍），接在現有的和弦後面挑順手的按法 */
-  const chordsForMelodyBars = (g: readonly BeatNote[], fromBeat: number, n: number): ProgressionItem[] => {
-    const k = key ?? inferKeyFromMelody(g.map((x) => ({ midi: x.midi, durSec: x.beats })))[0] ?? { tonic: 0, mode: 'major' as const };
-    const refsForBars = harmonizeBarsFlow(g, fromBeat, n, k, analyzed[items.length - 1]?.best);
-    let prev = items[items.length - 1]?.frets;
+  const chordsForMelodyBars = (
+    g: readonly BeatNote[],
+    fromBeat: number,
+    n: number,
+    /** fresh：整段重配，不接在現有和弦後面；k：指定用哪個調 */
+    o: { fresh?: boolean; k?: Pick<KeyGuess, 'tonic' | 'mode'> } = {},
+  ): ProgressionItem[] => {
+    const k = o.k ?? key ?? inferKeyFromMelody(g.map((x) => ({ midi: x.midi, durSec: x.beats })))[0] ?? { tonic: 0, mode: 'major' as const };
+    const refsForBars = harmonizeBarsFlow(g, fromBeat, n, k, o.fresh ? undefined : analyzed[items.length - 1]?.best, 4, harmStyle);
+    let prev = o.fresh ? undefined : items[items.length - 1]?.frets;
     const added: ProgressionItem[] = [];
     for (const ch of refsForBars) {
       const f = voiceFor(ch, prev, added.map((a) => a.frets));
@@ -581,6 +607,43 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     setSingOpen(false);
     setSelId(added[0]?.id ?? null);
   };
+  // ── 依旋律整段重配：調性可以自己選（短旋律常猜到關係調），簡單／多一點色彩可以切 ──
+  const melodyKeys = useMemo(() => inferKeyFromMelody(grid.map((x) => ({ midi: x.midi, durSec: x.beats }))), [grid]);
+  const sameKey = (a: Pick<KeyGuess, 'tonic' | 'mode'> | null | undefined, b: Pick<KeyGuess, 'tonic' | 'mode'>) =>
+    !!a && a.tonic === b.tonic && a.mode === b.mode;
+  /** 重配時用的調：鎖定的調優先，其次是從旋律猜的第一名 */
+  const reKey = locked ?? melodyKeys[0];
+  const keyOptions = reKey && !melodyKeys.some((k) => sameKey(reKey, k)) ? [reKey, ...melodyKeys.slice(0, 2)] : melodyKeys;
+  const keyLabel = (k: Pick<KeyGuess, 'tonic' | 'mode'>) => `${spellerForKey(k.tonic, k.mode)(k.tonic)} ${k.mode === 'major' ? '大調' : '小調'}`;
+  const reharmonize = (k: Pick<KeyGuess, 'tonic' | 'mode'> | undefined = reKey) => {
+    if (!k || !grid.length) return;
+    const n = Math.max(1, Math.ceil(Math.max(melodyEnd, totalBeats) / 4 - 1e-9));
+    const added = chordsForMelodyBars(grid, 0, n, { fresh: true, k });
+    if (!added.length) return;
+    withUndo(`已用 ${keyLabel(k)} 依旋律重新配了 ${added.length} 小節`, { progression: added, keyLock: { tonic: k.tonic, mode: k.mode } });
+    setSingOpen(false);
+    setSelId(null);
+  };
+  /** 換一個：這個和弦撐的那幾拍旋律還能配什麼，輪流換上去聽 */
+  const swapOptions = (i: number): ChordRef[] => {
+    if (!grid.length || !items[i]) return [];
+    const notes = melodyAt(i);
+    const k = key ?? melodyKeys[0];
+    return notes.length && k ? barAlternatives(notes, k) : [];
+  };
+  const swapChord = (id: string) => {
+    const i = items.findIndex((x) => x.id === id);
+    const alts = swapOptions(i);
+    const cur = analyzed[i]?.best;
+    if (!alts.some((a) => !sameChord(a, cur))) return;
+    const at = alts.findIndex((a) => sameChord(a, cur));
+    const next = alts[(at + 1) % alts.length] as ChordRef;
+    const f = voiceFor(next, items[i - 1]?.frets);
+    if (!f) return;
+    updateItem(id, { frets: [...f] });
+    playChords([midisOfFrets(f)], 1.4);
+  };
+
   /** 在和弦輸入框打了一串旋律音：當成這段的旋律；這段還沒有和弦的話，順便每小節配一個 */
   const applyTypedMelody = (g: BeatNote[]) => {
     const { takes: next } = addTake(section, g);
@@ -769,9 +832,11 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                 beats: beatsOf(it),
                 fit: check?.fit,
                 clashText: check ? names2(check.clashes) : '',
+                canSwap: it.id === selId && swapOptions(i).some((a) => !sameChord(a, best)),
               };
             })}
             melody={grid}
+            onSwap={swapChord}
             onReorder={reorder}
             onBeats={(id, n) => updateItem(id, { beats: n })}
             ghostBars={ghostBars}
@@ -806,6 +871,52 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               </button>
             )}
           </div>
+
+          {grid.length > 0 && items.length > 0 && reKey && (
+            <div className="reharm" role="group" aria-label="依旋律重新配和弦">
+              <span className="reharm-label">依旋律配和弦</span>
+              <div className="seg seg-sm" role="group" aria-label="用哪個調配">
+                {keyOptions.slice(0, 3).map((k) => (
+                  <button
+                    key={`${k.tonic}-${k.mode}`}
+                    type="button"
+                    className={`seg-btn ${sameKey(reKey, k) ? 'is-on' : ''}`}
+                    aria-pressed={sameKey(reKey, k)}
+                    title={`用 ${keyLabel(k)} 重新配`}
+                    onClick={() => reharmonize(k)}
+                  >
+                    {keyLabel(k)}
+                  </button>
+                ))}
+              </div>
+              <select
+                className="input input-sm reharm-key"
+                aria-label="用其他調重新配"
+                value=""
+                onChange={(e) => {
+                  const [t, m] = e.target.value.split('-');
+                  if (e.target.value) reharmonize({ tonic: Number(t), mode: m as 'major' | 'minor' });
+                }}
+              >
+                <option value="">其他調…</option>
+                {(['major', 'minor'] as const).flatMap((m) =>
+                  Array.from({ length: 12 }, (_, t) => (
+                    <option key={`${t}-${m}`} value={`${t}-${m}`}>{keyLabel({ tonic: t, mode: m })}</option>
+                  )),
+                )}
+              </select>
+              <div className="seg seg-sm" role="group" aria-label="和弦的複雜度">
+                <button type="button" className={`seg-btn ${harmStyle === 'simple' ? 'is-on' : ''}`} aria-pressed={harmStyle === 'simple'} onClick={() => setHarmStyle('simple')}>
+                  簡單和弦
+                </button>
+                <button type="button" className={`seg-btn ${harmStyle === 'color' ? 'is-on' : ''}`} aria-pressed={harmStyle === 'color'} onClick={() => setHarmStyle('color')}>
+                  多點色彩
+                </button>
+              </div>
+              <button type="button" className="btn btn-sm" onClick={() => reharmonize()}>重新配</button>
+              <p className="help reharm-help">聽起來不對就換個調試試；單一小節不滿意，點那個和弦再按「換一個」。</p>
+            </div>
+          )}
 
           {items.length === 0 && grid.length === 0 && (
             <div className="empty">

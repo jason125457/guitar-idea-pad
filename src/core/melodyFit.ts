@@ -148,6 +148,23 @@ export function chordsForMelody(
   return ideas.filter((i) => i.fit !== 'clash').sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
+/** 自動配和弦的風格：simple 只用調內三和弦；color 會用七和弦、加九和弦 */
+export type HarmonyStyle = 'simple' | 'color';
+
+/**
+ * 這幾拍的旋律可以配的和弦，給「換一個」輪流試：不摩擦的才列，三和弦排前面、七和弦與加九排後面，
+ * 順序只看旋律、不看目前是哪個和弦，所以一直按會繞一圈回來。
+ */
+export function barAlternatives(
+  notes: readonly (BeatNote & { strong: boolean })[],
+  key: Pick<KeyGuess, 'tonic' | 'mode'>,
+  limit = 6,
+): ChordRef[] {
+  const ideas = chordsForMelody(notes, key, undefined, 99).filter((i) => quality(i.chord.qualityId).family !== 'diminished');
+  const triad = (ch: ChordRef) => quality(ch.qualityId).intervals.length <= 3;
+  return [...ideas.filter((i) => triad(i.chord)), ...ideas.filter((i) => !triad(i.chord))].slice(0, limit).map((i) => i.chord);
+}
+
 /**
  * 依旋律每小節配一個和弦（給「先唱、還沒有和弦」的小節用）：
  * 每小節取最合的；沒唱的小節沿用前一個；第一小節沒唱時用主和弦。
@@ -212,6 +229,7 @@ export function harmonizeBarsFlow(
   key: Pick<KeyGuess, 'tonic' | 'mode'>,
   prev?: ChordRef,
   beatsPerBar = 4,
+  style: HarmonyStyle = 'simple',
 ): ChordRef[] {
   try {
     const windows = buildBarWindows(notes, fromBeat, bars, beatsPerBar);
@@ -219,7 +237,9 @@ export function harmonizeBarsFlow(
     const lead = windows.findIndex((w) => !w.empty);
     if (lead < 0) return harmonizeBars(notes, fromBeat, bars, key, prev, beatsPerBar);
     const start: ChordRef = prev ?? (diatonicChords(key)[0] as ChordRef);
-    const { choices } = harmonize(windows.slice(lead), key, 1, { prev: start, plain: true });
+    // 前面真的有和弦才當成「前一個和弦」去接；沒有的話讓開頭照常偏好主和弦
+    // （把主和弦當成前一個傳進去，「不要連續同一個和弦」的規則反而會把第一小節推離主和弦）
+    const { choices } = harmonize(windows.slice(lead), key, 1, { ...(prev ? { prev } : {}), plain: true, simple: style === 'simple' });
     const sung = choices.map((c) => c[0]).filter((c): c is NonNullable<typeof c> => !!c);
     if (sung.length === bars - lead) {
       return [

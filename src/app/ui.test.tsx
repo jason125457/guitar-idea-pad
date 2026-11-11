@@ -375,6 +375,44 @@ describe('App', () => {
     expect(screen.getByText(/已用 4 個音當旋律/)).toBeTruthy();
   });
 
+  it('harmonizes a typed melody with plain chords from the tonic, and lets you re-key, add colour and swap one bar', async () => {
+    try {
+      localStorage.removeItem('guitar-idea-pad.harmonyStyle');
+    } catch {
+      /* 忽略 */
+    }
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.click(screen.getByRole('button', { name: '唱旋律' }));
+    // 小星星
+    fireEvent.change(screen.getByLabelText('或直接打音名'), { target: { value: 'C4 C4 G4 G4 A4 A4 G4 G4 F4 F4 E4 E4 D4 D4 C4 C4' } });
+    fireEvent.click(screen.getByRole('button', { name: '用這些音' }));
+    await waitFor(() => expect(chipNames()).toHaveLength(4));
+    expect(chipNames()[0]).toBe('C'); // 以前是 Fadd9
+    chipNames().forEach((n) => expect(n).toMatch(/^[A-G][#b♯♭]?m?$/));
+
+    // 多點色彩 → 重新配：出現七和弦或加九
+    const re = within(screen.getByRole('group', { name: '依旋律重新配和弦' }));
+    fireEvent.click(re.getByRole('button', { name: '多點色彩' }));
+    fireEvent.click(re.getByRole('button', { name: '重新配' }));
+    await waitFor(() => expect(chipNames().some((n) => /7|add9/.test(n ?? ''))).toBe(true));
+
+    // 換成別的調重新配
+    fireEvent.click(re.getByRole('button', { name: '簡單和弦' }));
+    fireEvent.change(re.getByLabelText('用其他調重新配'), { target: { value: '9-minor' } });
+    await waitFor(() => expect(screen.getByText(/已用 A 小調 依旋律重新配了 4 小節/)).toBeTruthy());
+    expect(re.getByRole('button', { name: 'A 小調' })).toHaveProperty('ariaPressed', 'true');
+    chipNames().forEach((n) => expect(n).toMatch(/^[A-G][#b♯♭]?m?$/));
+
+    // 點一個和弦 → 換一個：只換那一格
+    const before = chipNames();
+    fireEvent.click(screen.getByRole('button', { name: /^第 1 個和弦/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /第 1 個和弦換一個/ }));
+    await waitFor(() => expect(chipNames()[0]).not.toBe(before[0]));
+    expect(chipNames().slice(1)).toEqual(before.slice(1));
+  });
+
   it('lets you sing before there are any chords', async () => {
     render(<App />);
     await ready();

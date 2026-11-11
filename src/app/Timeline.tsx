@@ -12,6 +12,8 @@ export interface TimelineChord {
   fit?: MelodyFit | undefined;
   /** 有摩擦的旋律音名，例如「F4、B4」 */
   clashText?: string;
+  /** 這幾拍的旋律還有別的和弦可以配（顯示「換一個」） */
+  canSwap?: boolean;
 }
 
 interface Props {
@@ -23,6 +25,8 @@ interface Props {
   /** 選中的和弦上方的快捷鍵：直接改成 2 拍或 4 拍 */
   onBeats?: (id: string, beats: number) => void;
   onReorder?: (id: string, toIndex: number) => void;
+  /** 換成下一個也合這幾拍旋律的和弦（輪流） */
+  onSwap?: (id: string) => void;
   onAdd: () => void;
   addActive: boolean;
   /** 跟著這段唱錄下的旋律（拍點對齊段落開頭） */
@@ -50,7 +54,7 @@ function useColumns(): number {
  * 小節時間軸：每個和弦方塊的寬度等於它佔的拍數，四拍一小節。
  * 播放時目前的和弦會亮起來，拍點一格一格跟著走（參考 Chordify、Riffstation 的做法）。
  */
-export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
+export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder, onSwap, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
   const cols = useColumns();
   const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
   const dragFrom = drag ? chords.findIndex((c) => c.id === drag.id) : -1;
@@ -150,6 +154,11 @@ export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder
                     {n}拍
                   </button>
                 ))}
+                {c.canSwap && onSwap && (
+                  <button type="button" className="tl-float-btn tl-swap" aria-label={`第 ${i + 1} 個和弦換一個也合旋律的和弦`} onClick={() => onSwap(c.id)}>
+                    換一個
+                  </button>
+                )}
               </span>
             )}
           </li>
