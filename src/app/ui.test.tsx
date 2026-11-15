@@ -308,6 +308,23 @@ describe('App', () => {
     expect(play().textContent).toContain('從主歌播到結尾');
   });
 
+  it('starts a section range from the selected chord, so the last chord can lead straight into the next section', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入 F' }));
+    fireEvent.click(screen.getByText('＋ 加段落'));
+    fireEvent.click(within(screen.getByRole('group', { name: '新增段落類型' })).getByRole('button', { name: '副歌' }));
+    fireEvent.click(await screen.findByRole('button', { name: '加入 G' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^主歌/ }));
+    fireEvent.click(screen.getByRole('button', { name: /第 2 個和弦 F/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^副歌/ }), { shiftKey: true });
+    expect(document.querySelector('.tp-play')!.textContent).toContain('從第 2 個播放 主歌 → 副歌');
+  });
+
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
     await ready();

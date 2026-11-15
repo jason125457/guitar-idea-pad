@@ -514,7 +514,10 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
       offset += (s.progression.reduce((n, it) => n + beatsOf(it), 0) * 60) / bpmOf(s);
       return m;
     });
-    playback.play(playList.flatMap(planOf), { mode: 'song', ...(withMelody ? { melody } : {}) });
+    // 有選取和弦時從那個和弦開始播（像 DAW 的播放游標），播完接著往後面的段落走
+    const plan = playList.flatMap(planOf);
+    const startAt = selected ? Math.max(0, plan.findIndex((p) => p.itemId === selected.id)) : 0;
+    playback.play(plan, { mode: 'song', startAt, ...(withMelody ? { melody } : {}) });
   };
 
   const songLen = songLength(idea);
@@ -785,7 +788,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             <button type="button" className="btn btn-primary tp-play" onClick={playback.stop}>■ 停止</button>
           ) : (
             <button type="button" className="btn btn-primary tp-play" disabled={!canPlay} onClick={playNow}>
-              ▶ {rangeActive ? `播放 ${rangeLabel}` : scope === 'song' ? '播放整首' : scope === 'from' ? `從${sectionName}播到結尾` : selIndex > 0 ? `從第 ${selIndex + 1} 個播放` : `播放${sectionName}`}
+              ▶ {rangeActive ? `${selIndex > 0 ? `從第 ${selIndex + 1} 個` : ''}播放 ${rangeLabel}` : scope === 'song' ? `${selIndex > 0 ? `從${sectionName}第 ${selIndex + 1} 個` : ''}播放整首` : scope === 'from' ? `從${sectionName}${selIndex > 0 ? `第 ${selIndex + 1} 個` : ''}播到結尾` : selIndex > 0 ? `從第 ${selIndex + 1} 個播放` : `播放${sectionName}`}
             </button>
           )}
           <div className="seg seg-sm" role="group" aria-label="播放範圍">
