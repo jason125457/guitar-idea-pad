@@ -325,6 +325,23 @@ describe('App', () => {
     expect(document.querySelector('.tp-play')!.textContent).toContain('從第 2 個播放 主歌 → 副歌');
   });
 
+  it('repeats the whole section once more inside the same section, and can undo it', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消選取，回到加和弦' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入 G' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G']));
+
+    fireEvent.click(screen.getByRole('button', { name: /整段再重複一次/ }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G', 'C', 'G']));
+    const toast = document.querySelector('.toast') as HTMLElement;
+    fireEvent.click(within(toast).getByRole('button', { name: '復原' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G']));
+  });
+
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
     await ready();

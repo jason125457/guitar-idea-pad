@@ -881,6 +881,11 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               hasChords={items.length > 0}
               onRelabel={(l) => patch({ label: l })}
               onMove={moveSectionBy}
+              onDouble={() =>
+                withUndo(`已把${sectionName}的 ${items.length} 個和弦再重複一次`, {
+                  progression: [...items, ...items.map((it) => ({ ...it, id: newId('c'), frets: [...it.frets] }))],
+                })
+              }
               onRepeat={(linked) => {
                 const r = duplicateSection(idea, section.id, linked);
                 if (!r) return;

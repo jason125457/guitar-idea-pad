@@ -11,6 +11,8 @@ interface Props {
   hasChords: boolean;
   onRelabel: (l: SectionLabel) => void;
   onMove: (dir: -1 | 1) => void;
+  /** 把這段的和弦整份複製一遍接在後面（同一個段落裡重複兩次） */
+  onDouble: () => void;
   onRepeat: (linked: boolean) => void;
   onUnlink: () => void;
   onClear: () => void;
@@ -60,6 +62,11 @@ export function SectionMenu(p: Props) {
           <button type="button" className="btn btn-sm btn-ghost" disabled={!p.canMove.right} onClick={() => p.onMove(1)}>往後移 →</button>
         </div>
         <hr />
+        {p.hasChords && (
+          <button type="button" className="menu-item" onClick={act(p.onDouble)}>
+            整段再重複一次<small>把現在的和弦複製一份接在後面，這段變兩倍長</small>
+          </button>
+        )}
         <button type="button" className="menu-item" onClick={act(() => p.onRepeat(true))}>
           重複這段（連動）<small>改一個，另一個跟著變，適合副歌</small>
         </button>
