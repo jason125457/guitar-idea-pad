@@ -2,7 +2,7 @@
  * 節奏型：把「這個和弦彈幾拍」變成實際要發出的每一下（刷弦或撥單音）。
  * 純函式，不碰 AudioContext，方便測試；排進時間軸由 pluck.ts 負責。
  */
-import type { StrumPattern } from '../core';
+import { DEFAULT_STRUM, type StrumCell, type StrumPattern } from '../core';
 import { strumBeats, type TimedChord } from './pluck';
 
 const BEATS_PER_BAR = 4;
@@ -41,7 +41,15 @@ function upDown(n: number): number[] {
  * 一個和弦用某個節奏型彈出來的每一下。
  * @param startBeat 這個和弦在段落裡從第幾拍開始（決定它落在小節的哪裡，例如民謠刷法的「下」要對在正拍）
  */
-export function patternEvents(midis: readonly number[], beats: number, beatSec: number, pattern: StrumPattern, startBeat = 0): TimedChord[] {
+export function patternEvents(
+  midis: readonly number[],
+  beats: number,
+  beatSec: number,
+  pattern: StrumPattern,
+  startBeat = 0,
+  /** 自訂刷法的格子（pattern 是 custom 時用） */
+  strum?: readonly StrumCell[],
+): TimedChord[] {
   const notes = [...midis].sort((a, b) => a - b);
   if (!notes.length || beats <= 0) return [];
   if (pattern === 'beat') return strumBeats([{ midis: notes, beats }], beatSec);
@@ -79,6 +87,24 @@ export function patternEvents(midis: readonly number[], beats: number, beatSec: 
     return hits.map((h, i) => {
       const nextE = hits[i + 1]?.e ?? eighths;
       // 往上刷通常只掃到高音那幾條弦
+      const m = h.dir === 'up' ? notes.slice(Math.max(0, notes.length - 4)) : notes;
+      return { midis: m, startSec: sec(h.e / 2), durSec: sec((nextE - h.e) / 2), level: h.level, dir: h.dir };
+    });
+  }
+
+  if (pattern === 'custom') {
+    const cells = strum?.length ? strum : DEFAULT_STRUM;
+    const hits: { e: number; dir: 'down' | 'up'; level: number }[] = [];
+    for (let e = 0; e < eighths; e++) {
+      const idx = (((Math.round(startBeat * 2) + e) % cells.length) + cells.length) % cells.length;
+      const cell = cells[idx];
+      const onBeat = idx % 2 === 0;
+      if (cell === 'D') hits.push({ e, dir: 'down', level: idx % EIGHTHS_PER_BAR === 0 ? 1 : onBeat ? 0.85 : 0.75 });
+      else if (cell === 'U') hits.push({ e, dir: 'up', level: 0.55 });
+      else if (e === 0) hits.push({ e, dir: 'down', level: 0.9 }); // 和弦換在空格上也要聽得到
+    }
+    return hits.map((h, i) => {
+      const nextE = hits[i + 1]?.e ?? eighths;
       const m = h.dir === 'up' ? notes.slice(Math.max(0, notes.length - 4)) : notes;
       return { midis: m, startSec: sec(h.e / 2), durSec: sec((nextE - h.e) / 2), level: h.level, dir: h.dir };
     });

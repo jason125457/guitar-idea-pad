@@ -74,11 +74,11 @@ export function scheduleMelody(c: AudioContext, t0: number, notes: readonly Play
 }
 
 /** 節拍器的「滴」：第一下（accent）高一點。times 是 AudioContext 的絕對時間。 */
-export function scheduleClicks(c: AudioContext, times: readonly number[], accentFirst = true): void {
+export function scheduleClicks(c: AudioContext, times: readonly number[], accentFirst = true, accents?: readonly boolean[]): void {
   times.forEach((t, i) => {
     const osc = c.createOscillator();
     osc.type = 'square';
-    osc.frequency.value = accentFirst && i % 4 === 0 ? 1760 : 1320;
+    osc.frequency.value = (accents ? accents[i] : accentFirst && i % 4 === 0) ? 1760 : 1320;
     const g = c.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.12, t + 0.003);

@@ -342,6 +342,60 @@ describe('App', () => {
     await waitFor(() => expect(chipNames()).toEqual(['C', 'G']));
   });
 
+  it('copies several selected chords and pastes them after the selection or into another section', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    tab('打字／貼上');
+    fireEvent.change(screen.getByLabelText('直接輸入和弦名稱'), { target: { value: 'C、G、Am' } });
+    fireEvent.click(screen.getByRole('button', { name: '＋ 加入 3 個' }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G', 'Am']));
+
+    // 選第 1 個，Shift＋點第 3 個＝選起三個，一起複製
+    fireEvent.click(screen.getByRole('button', { name: /第 1 個和弦 C/ }));
+    fireEvent.click(screen.getByRole('button', { name: /第 3 個和弦 Am/ }), { shiftKey: true });
+    expect(document.querySelectorAll('.tl-block.is-multi')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: '複製 3 個和弦' }));
+
+    // 貼在選取的最後一個後面
+    fireEvent.click(screen.getByRole('button', { name: /^貼上 3 個和弦/ }));
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G', 'Am', 'C', 'G', 'Am']));
+
+    // 鍵盤也行：選中第 2 個，Ctrl＋C、Ctrl＋V，複製的一個接在它後面
+    fireEvent.click(screen.getByRole('button', { name: /第 2 個和弦 G/ }));
+    fireEvent.keyDown(document.body, { key: 'c', ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: 'v', ctrlKey: true });
+    await waitFor(() => expect(chipNames()).toEqual(['C', 'G', 'G', 'Am', 'C', 'G', 'Am']));
+
+    // 換到另一個段落貼上（沒選和弦就加在最後）
+    fireEvent.click(screen.getByText('＋ 加段落'));
+    fireEvent.click(within(screen.getByRole('group', { name: '新增段落類型' })).getByRole('button', { name: '副歌' }));
+    await waitFor(() => expect(chipNames()).toEqual([]));
+    fireEvent.click(await screen.findByRole('button', { name: /^貼上 1 個和弦/ }));
+    await waitFor(() => expect(chipNames()).toEqual(['G']));
+  });
+
+  it('lets you edit a custom strum pattern cell by cell', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.change(screen.getByLabelText(/的彈法$/), { target: { value: 'custom' } });
+    const cells = () => [...document.querySelectorAll('.strum-cell')].map((c) => c.className.includes('down') ? 'D' : c.className.includes('up') ? 'U' : '-').join('');
+    expect(cells()).toBe('D-DU-UDU');
+    // 第 2 個格子（第 1 拍後半）：不刷 → 下刷 → 上刷 → 不刷
+    const second = document.querySelectorAll('.strum-cell')[1] as HTMLElement;
+    fireEvent.click(second);
+    expect(cells()).toBe('DDDU-UDU');
+    fireEvent.click(second);
+    expect(cells()).toBe('DUDU-UDU');
+    fireEvent.click(second);
+    expect(cells()).toBe('D-DU-UDU');
+    // 兩小節一輪：複製成 16 格
+    fireEvent.click(screen.getByRole('button', { name: '2 小節' }));
+    expect(document.querySelectorAll('.strum-cell')).toHaveLength(16);
+  });
+
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
     await ready();

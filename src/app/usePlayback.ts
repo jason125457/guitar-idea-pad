@@ -3,7 +3,7 @@ import { getContext } from '../audio/context';
 import { onStopAll, playTimedChords, stopAll } from '../audio/pluck';
 import { patternEvents } from '../audio/rhythm';
 import { scheduleClicks, scheduleMelody, stopTones, type PlayableNote } from '../audio/tone';
-import type { StrumPattern } from '../core';
+import type { StrumCell, StrumPattern } from '../core';
 
 /** 播放清單裡的一格：哪個段落的哪個和弦、幾拍、一拍幾秒。 */
 export interface PlanItem {
@@ -14,6 +14,8 @@ export interface PlanItem {
   beatSec: number;
   /** 這個段落的彈法 */
   pattern: StrumPattern;
+  /** 自訂刷法的格子 */
+  strum?: StrumCell[] | undefined;
   /** 這個和弦在段落裡從第幾拍開始（節奏型要對齊小節） */
   sectionBeat: number;
 }
@@ -75,6 +77,8 @@ export function usePlayback() {
         countInBeats?: number;
         /** 只放節拍器、不刷和弦（錄音時避免吉他聲被麥克風收進去） */
         clickOnly?: boolean;
+        /** 刷和弦的同時打節拍器（每小節第一拍重一點） */
+        metronome?: boolean;
       },
     ): { t0: number; total: number } | undefined => {
       const full = schedule(plan);
@@ -88,7 +92,7 @@ export function usePlayback() {
         const beat0 = timed[0]?.beatSec ?? 0.5;
         const lead = countIn * beat0;
         const chords = timed.flatMap((p) =>
-          patternEvents(p.midis, p.beats, p.beatSec, p.pattern, p.sectionBeat).map((c) => ({ ...c, startSec: c.startSec + p.startSec + lead })),
+          patternEvents(p.midis, p.beats, p.beatSec, p.pattern, p.sectionBeat, p.strum).map((c) => ({ ...c, startSec: c.startSec + p.startSec + lead })),
         );
         const span = timed.reduce((e, p) => Math.max(e, p.startSec + p.beats * p.beatSec), 0);
         // 會先 stopAll → halt，所以下面才設定新的狀態；只放節拍器時用一個無聲的「和弦」讓總長一致
@@ -102,6 +106,17 @@ export function usePlayback() {
         for (let i = 0; i < countIn; i++) clicks.push(t0 - lead + i * beat0);
         if (opts.clickOnly) for (const p of timed) for (let b = 0; b < p.beats; b++) clicks.push(t0 + p.startSec + b * p.beatSec);
         scheduleClicks(ctx, clicks);
+        if (opts.metronome && !opts.clickOnly) {
+          const times: number[] = [];
+          const accents: boolean[] = [];
+          for (const p of timed) {
+            for (let b = 0; b < p.beats; b++) {
+              times.push(t0 + p.startSec + b * p.beatSec);
+              accents.push((p.sectionBeat + b) % 4 === 0);
+            }
+          }
+          scheduleClicks(ctx, times, true, accents);
+        }
         if (opts.melody?.length) {
           scheduleMelody(ctx, t0, opts.melody.map((n) => ({ ...n, startSec: n.startSec - offset })).filter((n) => n.startSec >= -1e-6));
         }

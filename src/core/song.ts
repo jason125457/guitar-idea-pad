@@ -39,14 +39,28 @@ export const BPM_RANGE: [number, number] = [40, 240];
 export const BEAT_CHOICES = [1, 2, 3, 4, 6, 8];
 
 /** 伴奏的彈法（節奏型）。 */
-export type StrumPattern = 'beat' | 'whole' | 'folk' | 'palm' | 'arpeggio';
+export type StrumPattern = 'beat' | 'whole' | 'folk' | 'palm' | 'arpeggio' | 'custom';
+/** 自訂刷法的一格（一個八分音符）：D 下刷、U 上刷、- 不刷。 */
+export type StrumCell = 'D' | 'U' | '-';
+/** 自訂刷法可以是一小節（8 格）或兩小節（16 格）一輪。 */
+export const STRUM_CELL_COUNTS = [8, 16] as const;
+/** 剛選「自訂刷法」時的起手式：民謠刷法的第一小節，使用者再改。 */
+export const DEFAULT_STRUM: StrumCell[] = ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'];
 export const STRUM_PATTERNS: { id: StrumPattern; name: string; hint: string }[] = [
   { id: 'beat', name: '每拍刷一下', hint: '穩、直接，練換和弦' },
   { id: 'whole', name: '一小節刷一下', hint: '讓和弦響著，空、開闊' },
   { id: 'folk', name: '民謠刷法', hint: '下、下上、上下上；下、下上、下下上' },
   { id: 'palm', name: '八分音符悶音', hint: '電吉他的推進感' },
   { id: 'arpeggio', name: '分解和弦', hint: '先彈低音再往上撥' },
+  { id: 'custom', name: '自訂刷法', hint: '自己點每個八分音符：下、上、不刷' },
 ];
+/** 讀進來的自訂刷法：長度必須是 8 或 16 格、每格是 D／U／-，而且至少刷一下。 */
+export function normalizeStrum(raw: unknown): StrumCell[] | undefined {
+  if (!Array.isArray(raw) || !(STRUM_CELL_COUNTS as readonly number[]).includes(raw.length)) return undefined;
+  const cells = raw.map((c) => (c === 'D' || c === 'U' || c === '-' ? c : undefined));
+  if (cells.some((c) => c === undefined) || !cells.includes('D') && !cells.includes('U')) return undefined;
+  return cells as StrumCell[];
+}
 const PATTERN_IDS = new Set<string>(STRUM_PATTERNS.map((p) => p.id));
 export const patternOf = (s: Pick<Section, 'pattern'>): StrumPattern => s.pattern ?? 'beat';
 
@@ -103,6 +117,8 @@ export interface Section {
   link?: string;
   /** 伴奏彈法；未設定時是每拍刷一下 */
   pattern?: StrumPattern;
+  /** 彈法選「自訂刷法」時，每個八分音符怎麼刷（8 或 16 格） */
+  strum?: StrumCell[];
   /** 跟著這段和弦唱錄下的旋律，對齊在段落的拍點上（beat 0 = 段落開頭） */
   melodyGrid?: BeatNote[];
   /** 之前唱過的幾次（新的在前，最多 MAX_TAKES 次）；melodyGrid 是目前採用的那次 */
@@ -124,7 +140,7 @@ export function addTake(s: Pick<Section, 'melodyTakes'>, notes: BeatNote[], now 
 }
 
 /** 連動段落之間共用的內容。 */
-const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern', 'melodyGrid', 'melodyTakes'] as const;
+const SHARED_KEYS = ['label', 'progression', 'keyLock', 'melody', 'melodyTimed', 'bpm', 'pattern', 'strum', 'melodyGrid', 'melodyTakes'] as const;
 
 /** 旋律文字與時間資料音高完全對得上才回傳；否則代表旋律被手動改過，時間資料不可信。 */
 export function timedMelodyOf(section: Pick<Section, 'melody' | 'melodyTimed'>): TimedNote[] | undefined {
@@ -408,6 +424,8 @@ function normalizeSection(x: unknown): Section | undefined {
   if (validBpm(o.bpm)) section.bpm = Math.round(o.bpm);
   if (typeof o.link === 'string' && o.link) section.link = o.link;
   if (typeof o.pattern === 'string' && PATTERN_IDS.has(o.pattern)) section.pattern = o.pattern as StrumPattern;
+  const strum = normalizeStrum(o.strum);
+  if (strum) section.strum = strum;
   const grid = normalizeGrid(o.melodyGrid);
   if (grid) section.melodyGrid = grid;
   if (Array.isArray(o.melodyTakes)) {

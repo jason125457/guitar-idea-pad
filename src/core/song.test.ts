@@ -9,6 +9,7 @@ import {
   duplicateIdea,
   duplicateSection,
   layoutBars,
+  normalizeStrum,
   patternOf,
   linkedSections,
   moveSectionTo,
@@ -245,5 +246,17 @@ describe('melody takes', () => {
     const idea = updateSection(createIdea(), createIdea().sections[0]!.id, {});
     const withTakes = { ...idea, sections: [{ ...idea.sections[0]!, melodyTakes: s.melodyTakes }] };
     expect(normalizeIdea(JSON.parse(JSON.stringify(withTakes)))!.sections[0]!.melodyTakes).toHaveLength(6);
+  });
+});
+
+describe('custom strum cells', () => {
+  it('keeps a valid 8 or 16 cell pattern and drops anything else', () => {
+    const ok = ['D', '-', 'D', 'U', '-', 'U', 'D', 'U'];
+    expect(normalizeStrum(ok)).toEqual(ok);
+    expect(normalizeStrum([...ok, ...ok])).toHaveLength(16);
+    expect(normalizeStrum(ok.slice(0, 7))).toBeUndefined(); // 長度不對
+    expect(normalizeStrum(['D', 'X', '-', '-', '-', '-', '-', '-'])).toBeUndefined(); // 不認得的格子
+    expect(normalizeStrum(new Array(8).fill('-'))).toBeUndefined(); // 一下都不刷
+    expect(normalizeStrum('DUDU')).toBeUndefined();
   });
 });

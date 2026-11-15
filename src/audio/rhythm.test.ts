@@ -35,6 +35,18 @@ describe('patternEvents', () => {
     expect(patternEvents(C, 4, 1, 'folk', 4).map((e) => `${e.startSec}${e.dir === 'up' ? 'U' : 'D'}`)).toEqual(bar(1));
   });
 
+  it('plays a custom strum: each cell is down, up or silent, and a 16-cell pattern runs over two bars', () => {
+    const ev = patternEvents(C, 4, 1, 'custom', 0, ['D', '-', 'D', 'U', '-', 'U', 'D', 'U']);
+    expect(ev.map((e) => `${e.startSec}${e.dir === 'up' ? 'U' : 'D'}`)).toEqual(['0D', '1D', '1.5U', '2.5U', '3D', '3.5U']);
+    const two: ('D' | 'U' | '-')[] = ['D', '-', '-', '-', '-', '-', '-', '-', 'D', 'U', '-', '-', '-', '-', '-', '-'];
+    const bar = (n: number) => patternEvents(C, 8, 1, 'custom', 0, two).filter((e) => e.startSec >= n * 4 && e.startSec < n * 4 + 4).map((e) => `${e.startSec - n * 4}${e.dir === 'up' ? 'U' : 'D'}`);
+    expect(bar(0)).toEqual(['0D']);
+    expect(bar(1)).toEqual(['0D', '0.5U']);
+    // 還沒設定格子就用預設的民謠起手式；和弦換在空格上也要聽得到
+    expect(patternEvents(C, 2, 1, 'custom', 0)).toHaveLength(3);
+    expect(patternEvents(C, 2, 1, 'custom', 0, ['-', 'D', '-', '-', '-', '-', '-', '-'])[0]?.startSec).toBe(0);
+  });
+
   it('palm-mutes every eighth on the low strings with a short ring', () => {
     const ev = patternEvents(C, 2, 1, 'palm');
     expect(at(ev)).toEqual([0, 0.5, 1, 1.5]);

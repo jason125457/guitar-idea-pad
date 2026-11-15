@@ -3,3 +3,7 @@ dist
 .playwright-mcp
 .wrangler
 *.log
+
+# Claude Code local files
+.claude/settings.local.json
+.claude/worktrees/

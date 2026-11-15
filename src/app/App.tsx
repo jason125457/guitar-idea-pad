@@ -3,6 +3,7 @@ import { playChords, playTimedChords } from '../audio/pluck';
 import {
   BPM_RANGE,
   DEFAULT_BEATS,
+  DEFAULT_STRUM,
   addSection,
   addTake,
   harmonizeBarsFlow,
@@ -68,6 +69,7 @@ import { ChordImportPanel } from './ChordImportPanel';
 import { ChordInspector } from './ChordInspector';
 import { ChordPalette, type PaletteTab } from './ChordPalette';
 import { SectionMenu } from './SectionMenu';
+import { StrumEditor } from './StrumEditor';
 import { SongSidebar, formatDuration } from './SongSidebar';
 import { SingAlong } from './SingAlong';
 import { SongSheet } from './SongSheet';
@@ -214,6 +216,12 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   /** 起手式用哪個大調；還沒選過就跟著這段的調（是好按的大調時），否則 C */
   const [starterTonicPick, setStarterTonic] = useState<number | null>(null);
   const [loop, setLoop] = useState(false);
+  /** 播放時一起打節拍器（按下一次播放生效） */
+  const [metro, setMetro] = useState(false);
+  /** 時間軸上一起選起來的和弦（Shift 選一段、Ctrl／⌘ 加選），複製貼上用 */
+  const [multi, setMulti] = useState<string[]>([]);
+  /** 複製起來的和弦，換段落也還在 */
+  const [clip, setClip] = useState<ProgressionItem[]>([]);
   const [notice, setNotice] = useState('');
   const [navOpen, setNavOpen] = useState(false);
   const [withMelody, setWithMelody] = useState(true);
@@ -451,6 +459,46 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     setItems(next);
   };
 
+  // ── 複製貼上和弦 ──
+  const multiIds = multi.filter((id) => items.some((x) => x.id === id));
+  /** 要複製哪幾個：一起選的，沒有就是選中的那一個；依時間軸順序 */
+  const copyIds = multiIds.length > 1 ? multiIds : selected ? [selected.id] : [];
+  const copyItems = items.filter((x) => copyIds.includes(x.id));
+  const copyChords = () => {
+    if (!copyItems.length) return;
+    setClip(copyItems.map((x) => ({ ...x, frets: [...x.frets] })));
+    setNotice(`已複製 ${copyItems.length} 個和弦，到想貼的地方按「貼上」`);
+  };
+  const pasteChords = () => {
+    if (!clip.length) return;
+    const lastSel = copyItems.length ? items.findIndex((x) => x.id === copyItems[copyItems.length - 1]!.id) : -1;
+    const at = lastSel >= 0 ? lastSel + 1 : items.length;
+    const added = clip.map((x) => ({ ...x, id: newId('c'), frets: [...x.frets] }));
+    withUndo(`已貼上 ${added.length} 個和弦`, { progression: [...items.slice(0, at), ...added, ...items.slice(at)] });
+    setNotice('');
+    setSelId((added[0] as ProgressionItem).id);
+    setMulti(added.length > 1 ? added.map((x) => x.id) : []);
+  };
+  /** 時間軸點和弦：一般點是選一個；Shift 是選一段；Ctrl／⌘ 是加選 */
+  const pickChord = (id: string, mods: { shift: boolean; toggle: boolean }) => {
+    setSingOpen(false);
+    if (mods.shift && selected && selected.id !== id) {
+      const a = selIndex;
+      const b = items.findIndex((x) => x.id === id);
+      setMulti(items.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.id));
+      return;
+    }
+    if (mods.toggle) {
+      const base = multiIds.length > 1 ? multiIds : selected ? [selected.id] : [];
+      const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+      setMulti(next.length > 1 ? next : []);
+      if (!base.includes(id)) setSelId(id);
+      return;
+    }
+    setMulti([]);
+    setSelId((cur) => (cur === id ? null : id));
+  };
+
   // 換按法：同一個和弦的常用按法輪流換
   const selRef = selected ? analyzeVoicing(selected.frets).best : undefined;
   const prevFrets = items[selIndex - 1]?.frets;
@@ -484,7 +532,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     return s.progression.map((it) => {
       const sectionBeat = at;
       at += beatsOf(it);
-      return { sectionId: s.id, itemId: it.id, midis: midisOfFrets(it.frets), beats: beatsOf(it), beatSec: 60 / bpmOf(s), pattern: patternOf(s), sectionBeat };
+      return { sectionId: s.id, itemId: it.id, midis: midisOfFrets(it.frets), beats: beatsOf(it), beatSec: 60 / bpmOf(s), pattern: patternOf(s), strum: s.strum, sectionBeat };
     });
   };
   /** 對齊拍點的旋律換成秒（給播放用），offset 是這段在整個播放裡從第幾秒開始 */
@@ -494,6 +542,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const playSection = () =>
     playback.play(planOf(section), {
       loop,
+      metronome: metro,
       mode: 'section',
       startAt: selIndex >= 0 ? selIndex : 0,
       ...(withMelody ? { melody: melodySecs(section) } : {}),
@@ -517,7 +566,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     // 有選取和弦時從那個和弦開始播（像 DAW 的播放游標），播完接著往後面的段落走
     const plan = playList.flatMap(planOf);
     const startAt = selected ? Math.max(0, plan.findIndex((p) => p.itemId === selected.id)) : 0;
-    playback.play(plan, { mode: 'song', startAt, ...(withMelody ? { melody } : {}) });
+    playback.play(plan, { mode: 'song', startAt, loop, metronome: metro, ...(withMelody ? { melody } : {}) });
   };
 
   const songLen = songLength(idea);
@@ -743,6 +792,36 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     store.updateActive((i) => moveSectionTo(i, section.id, idx + dir));
   };
 
+  // ── 鍵盤：空白鍵播放／停止，Ctrl／⌘＋C、V 複製貼上和弦 ──
+  const keysRef = useRef({ toggle: () => {}, copy: () => {}, paste: () => {} });
+  keysRef.current = {
+    toggle: () => (playback.mode ? playback.stop() : canPlay ? playNow() : undefined),
+    copy: copyChords,
+    paste: pasteChords,
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (e.code === 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // 按鈕、連結本來就用空白鍵觸發；只有時間軸方塊和結構條（點選用的）改成播放
+        if (t?.closest('button, a, summary') && !t.closest('.tl, .st-strip')) return;
+        e.preventDefault();
+        keysRef.current.toggle();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'v')) {
+        if (e.key === 'c' && window.getSelection()?.toString()) return; // 有選到文字就是一般複製
+        e.preventDefault();
+        if (e.key === 'c') keysRef.current.copy();
+        else keysRef.current.paste();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // 換段落就清掉一起選的和弦
+  useEffect(() => setMulti([]), [section.id]);
+
   return (
     <div className="shell">
       <SongSidebar
@@ -796,8 +875,11 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             <button type="button" className={`seg-btn ${scope === 'from' && !rangeActive ? 'is-on' : ''}`} aria-pressed={scope === 'from' && !rangeActive} onClick={() => { setScope('from'); setRangeTo(null); }}>接著播</button>
             <button type="button" className={`seg-btn ${scope === 'song' && !rangeActive ? 'is-on' : ''}`} aria-pressed={scope === 'song' && !rangeActive} onClick={() => { setScope('song'); setRangeTo(null); }}>整首</button>
           </div>
-          <button type="button" className={`btn btn-sm tp-loop ${loop ? 'is-active' : ''}`} aria-pressed={loop} onClick={() => setLoop((l) => !l)} title="循環播放這段">
+          <button type="button" className={`btn btn-sm tp-loop ${loop ? 'is-active' : ''}`} aria-pressed={loop} onClick={() => setLoop((l) => !l)} title="循環播放（這段、接著播、整首、選的範圍都適用）">
             ⟳<span className="sr-only">循環</span>
+          </button>
+          <button type="button" className={`btn btn-sm tp-loop ${metro ? 'is-active' : ''}`} aria-pressed={metro} onClick={() => setMetro((m) => !m)} title="播放時一起打節拍器（下一次按播放生效）">
+            ♪<span className="sr-only">節拍器</span>
           </button>
           <label className="bpm">
             <input
@@ -860,7 +942,9 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
                 className="input input-sm"
                 value={patternOf(section)}
                 onChange={(e) => {
-                  patch({ pattern: e.target.value as (typeof STRUM_PATTERNS)[number]['id'] });
+                  const pattern = e.target.value as (typeof STRUM_PATTERNS)[number]['id'];
+                  // 第一次選自訂刷法時放一個起手式（民謠刷法第一小節），之後保留使用者自己的
+                  patch({ pattern, ...(pattern === 'custom' && !section.strum ? { strum: [...DEFAULT_STRUM] } : {}) });
                   // 播放中換彈法就先停下，按播放再聽新的彈法
                   if (playback.mode === 'section') playback.stop();
                 }}
@@ -906,6 +990,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             />
           </div>
           {linkedNames.length > 0 && <p className="linked-note">和 {linkedNames.join('、')} 連動，改這裡會一起改</p>}
+          {patternOf(section) === 'custom' && <StrumEditor cells={section.strum ?? DEFAULT_STRUM} onChange={(c) => patch({ strum: c })} />}
 
           <Timeline
             chords={items.map((it, i) => {
@@ -930,10 +1015,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             ghostBars={ghostBars}
             selectedId={selId}
             pos={playback.pos?.sectionId === section.id ? playback.pos : null}
-            onSelect={(id) => {
-              setSingOpen(false);
-              setSelId((cur) => (cur === id ? null : id));
-            }}
+            onSelect={pickChord}
+            multiIds={multiIds.length > 1 ? multiIds : []}
             onAdd={() => openAdd('common')}
             addActive={panelMode === 'add'}
           />
@@ -953,6 +1036,16 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
               </svg>
               唱旋律
             </button>
+            {copyItems.length > 0 && (
+              <button type="button" className="btn" onClick={copyChords} title="Ctrl／⌘＋C">
+                複製 {copyItems.length} 個和弦
+              </button>
+            )}
+            {clip.length > 0 && (
+              <button type="button" className="btn" onClick={pasteChords} title="Ctrl／⌘＋V">
+                貼上 {clip.length} 個和弦{copyItems.length ? '（接在選中的後面）' : '（加在最後）'}
+              </button>
+            )}
             {ghostBars > 0 && (
               <button type="button" className="btn btn-primary" onClick={fillFromMelody}>
                 依旋律配上和弦（{ghostBars} 小節）

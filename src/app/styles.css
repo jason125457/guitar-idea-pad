@@ -366,6 +366,7 @@ main { display: grid; gap: var(--s5); }
 .tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px 6px; }
 .tl-block { min-width: 0; position: relative; }
 .tl-block.is-sel { z-index: 2; }
+.tl-block.is-multi .tl-main { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
 .tl-float-bar {
   position: absolute; top: -17px; left: 50%; transform: translateX(-50%); z-index: 3;
   display: inline-flex; gap: 2px; padding: 1px; border-radius: 999px;
@@ -822,3 +823,21 @@ main { display: grid; gap: var(--s5); }
 .hum-tempo-now { margin: 0; font-size: 14px; color: var(--text); }
 .hum-tempo .help { margin: 0; }
 
+
+/* 自訂刷法編輯器 */
+.strum-ed { display: grid; gap: var(--s2); margin-bottom: var(--s3); }
+.strum-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
+.strum-head .shapes-title { margin: 0; }
+.strum-bar { display: grid; gap: 2px; }
+.strum-barno { font-size: 11px; color: var(--muted); }
+.strum-cells { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.strum-cell {
+  min-height: 48px; display: grid; place-items: center; align-content: center; gap: 0;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); cursor: pointer;
+}
+.strum-cell.is-beat { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.strum-sym { font-size: 20px; line-height: 1; }
+.strum-count { font-size: 11px; color: var(--muted); }
+.strum-down { background: color-mix(in srgb, var(--accent) 30%, var(--surface-2)); }
+.strum-up { background: color-mix(in srgb, var(--violet) 28%, var(--surface-2)); }
+.strum-rest .strum-sym { color: var(--muted); }

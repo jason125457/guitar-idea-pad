@@ -20,7 +20,10 @@ interface Props {
   chords: TimelineChord[];
   selectedId: string | null;
   pos: PlayPos | null;
-  onSelect: (id: string) => void;
+  /** shift：從目前選的選到這個；toggle（Ctrl／⌘）：加選或取消這個 */
+  onSelect: (id: string, mods: { shift: boolean; toggle: boolean }) => void;
+  /** 一起選起來的和弦（複製、貼上用） */
+  multiIds?: string[];
   /** 拖曳排序：把 id 這個和弦移到第 toIndex 個位置 */
   /** 選中的和弦上方的快捷鍵：直接改成 2 拍或 4 拍 */
   onBeats?: (id: string, beats: number) => void;
@@ -54,7 +57,7 @@ function useColumns(): number {
  * 小節時間軸：每個和弦方塊的寬度等於它佔的拍數，四拍一小節。
  * 播放時目前的和弦會亮起來，拍點一格一格跟著走（參考 Chordify、Riffstation 的做法）。
  */
-export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder, onSwap, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
+export function Timeline({ chords, selectedId, pos, onSelect, multiIds = [], onBeats, onReorder, onSwap, onAdd, addActive, melody = [], ghostBars = 0 }: Props) {
   const cols = useColumns();
   const [drag, setDrag] = useState<{ id: string; over: number | null } | null>(null);
   const dragFrom = drag ? chords.findIndex((c) => c.id === drag.id) : -1;
@@ -97,7 +100,7 @@ export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder
         return (
           <li
             key={c.id}
-            className={`tl-block tl-tag-${c.tag ?? 'none'} ${selected ? 'is-sel' : ''} ${playing ? 'is-play' : ''} ${startBeat % 4 === 0 ? 'on-bar' : ''} ${drag?.id === c.id ? 'is-dragging' : ''} ${drag && drag.over === i && dragFrom !== i ? (dragFrom > i ? 'drop-before' : 'drop-after') : ''}`}
+            className={`tl-block tl-tag-${c.tag ?? 'none'} ${selected ? 'is-sel' : ''} ${multiIds.includes(c.id) ? 'is-multi' : ''} ${playing ? 'is-play' : ''} ${startBeat % 4 === 0 ? 'on-bar' : ''} ${drag?.id === c.id ? 'is-dragging' : ''} ${drag && drag.over === i && dragFrom !== i ? (dragFrom > i ? 'drop-before' : 'drop-after') : ''}`}
             style={{ gridColumn: `span ${span}` }}
           >
             <button
@@ -105,7 +108,7 @@ export function Timeline({ chords, selectedId, pos, onSelect, onBeats, onReorder
               className="tl-main"
               aria-pressed={selected}
               aria-label={`第 ${i + 1} 個和弦 ${c.name}，${c.beats} 拍${c.fit === 'clash' ? `，跟旋律的 ${c.clashText ?? ''} 有摩擦` : ''}${playing ? '，播放中' : ''}`}
-              onClick={() => onSelect(c.id)}
+              onClick={(e) => onSelect(c.id, { shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey })}
               {...(onReorder
                 ? {
                     draggable: true,
