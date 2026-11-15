@@ -242,7 +242,8 @@ function transition(a: ChordRef, b: ChordRef, nextEmpty: boolean): number {
   if (nextEmpty) return same ? 0.8 : -0.5; // 休止：沿用前一個和弦
   const step = mod12(b.rootPc - a.rootPc);
   let s = 0;
-  if (a.rootPc === b.rootPc) s = same ? -0.25 : -0.05;
+  // 同一個和弦連續兩小節只輕扣一點：真實歌曲常常一個和弦撐好幾小節（驗證語料上 −0.25 會讓它為了「動」而換錯和弦）
+  if (a.rootPc === b.rootPc) s = same ? -0.1 : -0.05;
   else if (step === 5) s = 0.6; // 下行五度（V→I、ii→V、I→IV）
   else if (step === 7) s = 0.35; // 上行五度（IV→I）
   else if (step === 2 || step === 9) s = 0.3; // 級進上行、I→vi 等
