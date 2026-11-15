@@ -280,6 +280,34 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '設為 2 拍' })).toBeNull();
   });
 
+  it('plays a range of sections: shift-click another section to set the end, or play on from here', async () => {
+    render(<App />);
+    await ready();
+    clearSection();
+    fireEvent.change(screen.getByLabelText('指定調性'), { target: { value: '0-major' } });
+    fireEvent.click(screen.getByRole('button', { name: '加入 C' }));
+    fireEvent.click(screen.getByText('＋ 加段落'));
+    fireEvent.click(within(screen.getByRole('group', { name: '新增段落類型' })).getByRole('button', { name: '副歌' }));
+    fireEvent.click(await screen.findByRole('button', { name: '加入 G' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^主歌/ }));
+
+    const play = () => screen.getByRole('button', { name: /^▶/ });
+    expect(play().textContent).toContain('播放主歌');
+
+    // Shift＋點副歌：從主歌播到副歌，結構條上標出範圍
+    fireEvent.click(screen.getByRole('tab', { name: /^副歌/ }), { shiftKey: true });
+    expect(play().textContent).toContain('播放 主歌 → 副歌');
+    expect(document.querySelectorAll('.st-block.is-range')).toHaveLength(2);
+
+    // 普通點一下就取消範圍
+    fireEvent.click(screen.getByRole('tab', { name: /^主歌/ }));
+    expect(document.querySelectorAll('.st-block.is-range')).toHaveLength(0);
+
+    // 「接著播」：從這段播到結尾
+    fireEvent.click(screen.getByRole('button', { name: '接著播' }));
+    expect(play().textContent).toContain('從主歌播到結尾');
+  });
+
   it('adds a typed chord list at once, and hands a pasted paragraph to the paste panel', async () => {
     render(<App />);
     await ready();

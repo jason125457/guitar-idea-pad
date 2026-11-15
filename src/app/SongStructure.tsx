@@ -17,6 +17,9 @@ interface Props {
   activeId: string;
   playingId: string | null;
   onSelect: (id: string) => void;
+  /** Shift＋點：播放範圍從目前這段到被點的這段 */
+  rangeIds: string[];
+  onRange: (id: string) => void;
   onMoveTo: (id: string, index: number) => void;
   onAdd: (label: SectionLabel) => void;
 }
@@ -60,7 +63,7 @@ export function SongStructure(p: Props) {
     <section className="panel structure" aria-labelledby="h-structure">
       <div className="st-head">
         <h2 id="h-structure">歌曲結構</h2>
-        <span className="help st-hint">拖曳可以調整順序</span>
+        <span className="help st-hint">拖曳調整順序；Shift＋點另一段，可以只播這兩段之間</span>
       </div>
 
       <div className="st-strip" role="tablist" aria-label="歌曲段落" onKeyDown={onKey}>
@@ -80,7 +83,7 @@ export function SongStructure(p: Props) {
               aria-controls="section-panel"
               tabIndex={on ? 0 : -1}
               aria-label={`${b.name}，${fmtBars(b.bars)} 小節${b.linkedWith.length ? `，和 ${b.linkedWith.join('、')} 連動` : ''}`}
-              className={`st-block sec-${b.label} ${on ? 'is-on' : ''} ${p.playingId === b.id ? 'is-play' : ''} ${overIndex === i && dragId !== b.id ? 'is-over' : ''}`}
+              className={`st-block sec-${b.label} ${on ? 'is-on' : ''} ${p.playingId === b.id ? 'is-play' : ''} ${p.rangeIds.includes(b.id) ? 'is-range' : ''} ${overIndex === i && dragId !== b.id ? 'is-over' : ''}`}
               style={{ flex: `${Math.max(1, b.bars)} 1 calc(${Math.max(1, b.bars)} * 40px)` }}
               draggable
               onDragStart={(e) => {
@@ -104,7 +107,7 @@ export function SongStructure(p: Props) {
                 setDragId(null);
                 setOverIndex(null);
               }}
-              onClick={() => p.onSelect(b.id)}
+              onClick={(e) => (e.shiftKey ? p.onRange(b.id) : p.onSelect(b.id))}
             >
               <span className="st-name">
                 {b.name}

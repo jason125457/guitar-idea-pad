@@ -224,7 +224,9 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
   const [palOpen, setPalOpen] = useState(false);
   const [singBars, setSingBars] = useState(4);
   /** 播放鍵要播哪裡 */
-  const [scope, setScope] = useState<'section' | 'song'>('section');
+  const [scope, setScope] = useState<'section' | 'from' | 'song'>('section');
+  /** Shift＋點段落設定的播放範圍：從目前這段播到這一段（前後都可以） */
+  const [rangeTo, setRangeTo] = useState<string | null>(null);
   const [pasteSeed, setPasteSeed] = useState<{ text: string; n: number } | undefined>();
   const searchRef = useRef<HTMLInputElement>(null);
   const playback = usePlayback();
@@ -496,16 +498,24 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
       startAt: selIndex >= 0 ? selIndex : 0,
       ...(withMelody ? { melody: melodySecs(section) } : {}),
     });
+  const secIndex = idea.sections.findIndex((s) => s.id === section.id);
+  const rangeIdx = rangeTo ? idea.sections.findIndex((s) => s.id === rangeTo) : -1;
+  const rangeActive = rangeIdx >= 0 && rangeIdx !== secIndex;
+  /** 「整首／從這段起／Shift 選的範圍」要播哪幾段，依歌曲順序 */
+  const playList = rangeActive
+    ? idea.sections.slice(Math.min(secIndex, rangeIdx), Math.max(secIndex, rangeIdx) + 1)
+    : scope === 'from'
+      ? idea.sections.slice(Math.max(0, secIndex))
+      : idea.sections;
   const playSong = () => {
     let offset = 0;
-    const melody = idea.sections.flatMap((s) => {
+    const melody = playList.flatMap((s) => {
       const m = melodySecs(s, offset);
       offset += (s.progression.reduce((n, it) => n + beatsOf(it), 0) * 60) / bpmOf(s);
       return m;
     });
-    playback.play(idea.sections.flatMap(planOf), { mode: 'song', ...(withMelody ? { melody } : {}) });
+    playback.play(playList.flatMap(planOf), { mode: 'song', ...(withMelody ? { melody } : {}) });
   };
-  const songHasChords = idea.sections.some((s) => s.progression.length > 0);
 
   const songLen = songLength(idea);
   const linkedNames = linkedSections(idea, section.id).filter((s) => s.id !== section.id).map((s) => names[s.id] ?? '');
@@ -529,6 +539,7 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     [idea.sections],
   );
   const selectSection = (id: string) => {
+    setRangeTo(null);
     setSectionId(id);
     if (playback.mode === 'section') playback.stop();
   };
@@ -718,8 +729,12 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
     withUndo(`已把 ${g.length} 個音當成旋律，並配上 ${added.length} 小節的和弦`, { ...gridPatch(g), melodyTakes: next, progression: added });
     setSelId(added[0]?.id ?? null);
   };
-  const playNow = () => (scope === 'song' ? playSong() : playSection());
-  const canPlay = scope === 'song' ? songHasChords : items.length > 0;
+  const wholeSong = rangeActive || scope !== 'section';
+  const playNow = () => (wholeSong ? playSong() : playSection());
+  const canPlay = wholeSong ? playList.some((s) => s.progression.length > 0) : items.length > 0;
+  const rangeLabel = rangeActive
+    ? `${names[(playList[0] as { id: string }).id] ?? ''} → ${names[(playList[playList.length - 1] as { id: string }).id] ?? ''}`
+    : '';
   const moveSectionBy = (dir: -1 | 1) => {
     const idx = idea.sections.findIndex((x) => x.id === section.id);
     store.updateActive((i) => moveSectionTo(i, section.id, idx + dir));
@@ -770,12 +785,13 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
             <button type="button" className="btn btn-primary tp-play" onClick={playback.stop}>■ 停止</button>
           ) : (
             <button type="button" className="btn btn-primary tp-play" disabled={!canPlay} onClick={playNow}>
-              ▶ {scope === 'song' ? '播放整首' : selIndex > 0 ? `從第 ${selIndex + 1} 個播放` : `播放${sectionName}`}
+              ▶ {rangeActive ? `播放 ${rangeLabel}` : scope === 'song' ? '播放整首' : scope === 'from' ? `從${sectionName}播到結尾` : selIndex > 0 ? `從第 ${selIndex + 1} 個播放` : `播放${sectionName}`}
             </button>
           )}
           <div className="seg seg-sm" role="group" aria-label="播放範圍">
-            <button type="button" className={`seg-btn ${scope === 'section' ? 'is-on' : ''}`} aria-pressed={scope === 'section'} onClick={() => setScope('section')}>這段</button>
-            <button type="button" className={`seg-btn ${scope === 'song' ? 'is-on' : ''}`} aria-pressed={scope === 'song'} onClick={() => setScope('song')}>整首</button>
+            <button type="button" className={`seg-btn ${scope === 'section' && !rangeActive ? 'is-on' : ''}`} aria-pressed={scope === 'section' && !rangeActive} onClick={() => { setScope('section'); setRangeTo(null); }}>這段</button>
+            <button type="button" className={`seg-btn ${scope === 'from' && !rangeActive ? 'is-on' : ''}`} aria-pressed={scope === 'from' && !rangeActive} onClick={() => { setScope('from'); setRangeTo(null); }}>接著播</button>
+            <button type="button" className={`seg-btn ${scope === 'song' && !rangeActive ? 'is-on' : ''}`} aria-pressed={scope === 'song' && !rangeActive} onClick={() => { setScope('song'); setRangeTo(null); }}>整首</button>
           </div>
           <button type="button" className={`btn btn-sm tp-loop ${loop ? 'is-active' : ''}`} aria-pressed={loop} onClick={() => setLoop((l) => !l)} title="循環播放這段">
             ⟳<span className="sr-only">循環</span>
@@ -819,6 +835,8 @@ function Workspace({ idea, ideas, saveState, persistent, store }: WorkspaceProps
         activeId={section.id}
         playingId={playback.pos?.sectionId ?? null}
         onSelect={selectSection}
+        rangeIds={rangeActive ? playList.map((s) => s.id) : []}
+        onRange={(id) => setRangeTo(id === section.id ? null : id)}
         onMoveTo={(id, to) => store.updateActive((i) => moveSectionTo(i, id, to))}
         onAdd={(l: SectionLabel) => {
           const r = addSection(idea, l);

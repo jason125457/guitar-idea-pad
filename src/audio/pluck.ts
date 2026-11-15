@@ -8,6 +8,8 @@ import { STRUM_GAP_SEC, activePlayer, strumVelocity } from './sound';
 
 const buffers = new Map<number, AudioBuffer>();
 let active: AudioBufferSourceNode[] = [];
+/** 取樣播放器每一下回傳的取消函式：smplr 的 stop() 只停已經響的音，排在後面還沒到的音要靠這個取消 */
+let pending: Array<(time?: number) => void> = [];
 const stopListeners = new Set<() => void>();
 
 /** 任何地方呼叫 stopAll（包含開始播別的東西）時通知，讓播放游標知道要停。回傳取消訂閱。 */
@@ -51,6 +53,14 @@ export function stopAll(): void {
     }
   }
   active = [];
+  for (const cancel of pending) {
+    try {
+      cancel();
+    } catch {
+      /* 已結束 */
+    }
+  }
+  pending = [];
   activePlayer()?.stop();
   for (const fn of [...stopListeners]) fn();
 }
@@ -95,12 +105,13 @@ export function scheduleChords(c: AudioContext, t0: number, chords: readonly Tim
         // 往上刷時高音弦先響；力度仍依弦的位置（低音弦較重）
         const order = ch.dir === 'up' ? notes.length - 1 - ni : ni;
         // time 是 AudioContext 的絕對時間；多留一點讓琴弦自然收尾
-        player.start({
+        const cancel = player.start({
           note: m,
           time: t0 + ch.startSec + order * STRUM_GAP_SEC,
           duration: ch.durSec + (ch.ring ?? 0.5),
           velocity: strumVelocity(ni, level * (ch.level ?? 1)),
         });
+        if (typeof cancel === 'function') pending.push(cancel);
       });
     }
     return;

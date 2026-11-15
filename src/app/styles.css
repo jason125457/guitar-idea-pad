@@ -536,6 +536,7 @@ main { display: grid; gap: var(--s5); }
 .st-block:hover { background: color-mix(in srgb, var(--c) 20%, var(--surface)); }
 .st-block.is-on { box-shadow: 0 0 0 2px var(--text) inset; }
 .st-block.is-play { background: color-mix(in srgb, var(--c) 32%, var(--surface)); }
+.st-block.is-range { outline: 2px dashed var(--accent); outline-offset: -3px; }
 .st-block.is-over { box-shadow: -4px 0 0 0 var(--accent); }
 .sec-intro { --c: var(--sec-intro); } .sec-verse { --c: var(--sec-verse); } .sec-prechorus { --c: var(--sec-prechorus); }
 .sec-chorus { --c: var(--sec-chorus); } .sec-interlude { --c: var(--sec-interlude); } .sec-solo { --c: var(--sec-solo); }
